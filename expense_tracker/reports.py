@@ -6,6 +6,8 @@ from datetime import date
 from typing import Any
 
 from expense_tracker.budget import (
+    calculate_spending_forecast,
+    calculate_monthly_budget_health,
     calculate_budget_status,
     calculate_remaining_budget,
     get_daily_budget,
@@ -116,7 +118,47 @@ def calculate_month_report(rows: list[list[Any]], month: str) -> dict[str, Any]:
             summary["total_expense"], monthly_budget
         ),
         "category_totals": summary["category_totals"],
+        "insights": calculate_monthly_insights(transactions, summary),
+        "budget_health": calculate_monthly_budget_health(
+            month, summary["total_expense"], monthly_budget
+        ),
+        "forecast": calculate_spending_forecast(
+            month, summary["total_expense"], monthly_budget
+        ),
         "transactions": transactions,
+    }
+
+
+def calculate_monthly_insights(
+    transactions: list[dict[str, Any]], summary: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if summary is None:
+        summary = summarize_transactions(transactions)
+
+    merchant_totals: dict[str, float] = {}
+
+    for transaction in transactions:
+        amount = transaction["amount"]
+        if amount is None:
+            continue
+
+        merchant = transaction["merchant"] or ""
+        merchant_totals[merchant] = round(merchant_totals.get(merchant, 0.0) + amount, 2)
+
+    transaction_count = len(transactions)
+    total_expense = summary["total_expense"]
+    top_category, top_category_amount = _top_total(summary["category_totals"])
+    top_merchant, top_merchant_amount = _top_total(merchant_totals)
+
+    return {
+        "top_category": top_category,
+        "top_category_amount": top_category_amount,
+        "top_merchant": top_merchant,
+        "top_merchant_amount": top_merchant_amount,
+        "transaction_count": transaction_count,
+        "average_transaction": round(total_expense / transaction_count, 2)
+        if transaction_count
+        else 0.0,
     }
 
 
@@ -137,6 +179,14 @@ def summarize_transactions(transactions: list[dict[str, Any]]) -> dict[str, Any]
         "total_expense": round(total, 2),
         "category_totals": category_totals,
     }
+
+
+def _top_total(totals: dict[str, float]) -> tuple[str | None, float | None]:
+    if not totals:
+        return None, None
+
+    name, amount = max(totals.items(), key=lambda item: item[1])
+    return name, round(amount, 2)
 
 
 def rows_to_transactions(rows: list[list[Any]]) -> list[dict[str, Any]]:

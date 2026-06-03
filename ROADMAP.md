@@ -11,10 +11,19 @@
 - V1.5.1 SCB Parser Improvement
 - V1.6 Merchant Alias
 - V1.7 Merchant Category Mapping
+- V1.7.1 Monthly Insights
+- V1.8 Report Export
+- V1.9 Monthly Budget Health Check
+- V1.10 Release Safety Check
+- V1.11 Terminal Dashboard
+- V1.12 Spending Forecast
+- V1.13 Spending Trend Analysis
+- V1.14 Financial Goal Tracking
+- V1.15 Daily Reflection
 
 ## Proposed Milestones
 
-## V1.8 Better Parser Test Dataset
+## V1.16 Better Parser Test Dataset
 
 ### Goal
 
@@ -38,15 +47,14 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.9 Monthly Financial Insights
+## V1.17 Advanced Monthly Financial Insights
 
 ### Goal
 
-Provide useful month-level spending insights beyond totals.
+Expand month-level spending insights beyond the V1.7.1 basics.
 
 ### Scope
 
-- Add top merchants.
 - Add largest transactions.
 - Add category share percentages.
 - Add comparison against previous month where data exists.
@@ -59,7 +67,7 @@ Provide useful month-level spending insights beyond totals.
 
 ### Acceptance Criteria
 
-- `--month YYYY-MM` includes insight fields without removing existing fields.
+- `--month YYYY-MM` includes advanced insight fields without removing existing fields.
 - Insights ignore rows marked `DUPLICATE_SKIPPED`.
 - Tests cover calculations and empty-month behavior.
 

@@ -5,14 +5,20 @@ import json
 import sys
 from pathlib import Path
 
+from expense_tracker.dashboard import dashboard_payload, render_dashboard
+from expense_tracker.exports import export_month_report
+from expense_tracker.goals import add_goal, goals_report, update_goal
 from expense_tracker.maintenance import backfill_transaction_keys, dedupe_transactions
 from expense_tracker.merchant_categories import add_category
 from expense_tracker.merchant_aliases import add_alias
 from expense_tracker.ocr import OcrError, run_ocr
 from expense_tracker.parser import extract_transaction
+from expense_tracker.reflection import reflection_report
 from expense_tracker.reports import month_report, today_report
+from expense_tracker.safety import run_precommit_check
 from expense_tracker.sheets import SheetsError, append_transaction_to_sheet
 from expense_tracker.summary import update_summary_sheet
+from expense_tracker.trends import trend_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         help="Print a monthly spending report from Google Sheets, for example 2026-06.",
     )
     parser.add_argument(
+        "--export",
+        choices=("csv", "json"),
+        help="Export a monthly report to exports/YYYY-MM.csv or exports/YYYY-MM.json.",
+    )
+    parser.add_argument(
         "--backfill-keys",
         action="store_true",
         help="Backfill missing TransactionKey values in monthly Google Sheet tabs.",
@@ -59,6 +70,49 @@ def parse_args() -> argparse.Namespace:
         metavar=("MERCHANT_NAME", "CATEGORY"),
         help="Store a merchant category mapping, for example: --add-category MERCHANT food.",
     )
+    parser.add_argument(
+        "--precommit-check",
+        action="store_true",
+        help="Run safety checks before committing project changes.",
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Print a terminal dashboard for today's and this month's status.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print dashboard output as JSON. Requires --dashboard.",
+    )
+    parser.add_argument(
+        "--trend",
+        action="store_true",
+        help="Print spending trend analysis across monthly sheets.",
+    )
+    parser.add_argument(
+        "--goals",
+        action="store_true",
+        help="Print financial goals and progress.",
+    )
+    parser.add_argument(
+        "--goal-add",
+        nargs=3,
+        metavar=("GOAL_NAME", "TARGET", "CURRENT"),
+        help="Add or replace a financial goal.",
+    )
+    parser.add_argument(
+        "--goal-update",
+        nargs=2,
+        metavar=("GOAL_NAME", "CURRENT"),
+        help="Update the current amount for a financial goal.",
+    )
+    parser.add_argument(
+        "--reflection",
+        action="store_true",
+        help="Print today's spending reflection.",
+    )
     return parser.parse_args()
 
 
@@ -74,18 +128,31 @@ def main() -> int:
             args.dedupe,
             bool(args.add_alias),
             bool(args.add_category),
+            args.precommit_check,
+            args.dashboard,
+            args.trend,
+            args.goals,
+            bool(args.goal_add),
+            bool(args.goal_update),
+            args.reflection,
         )
         if selected
     )
 
     if command_count != 1:
         print(
-            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, or --add-category.",
+            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, or --reflection.",
             file=sys.stderr,
         )
         return 2
     if args.save and not args.image:
         print("--save requires --image.", file=sys.stderr)
+        return 2
+    if args.export and not args.month:
+        print("--export requires --month YYYY-MM.", file=sys.stderr)
+        return 2
+    if args.json_output and not args.dashboard:
+        print("--json requires --dashboard.", file=sys.stderr)
         return 2
 
     if args.today:
@@ -97,10 +164,16 @@ def main() -> int:
 
     if args.month:
         try:
-            return _print_output(month_report(args.month))
+            report = month_report(args.month)
+            if args.export:
+                return _print_output(export_month_report(report, args.export))
+            return _print_output(report)
         except SheetsError as exc:
             print(f"Report failed: {exc}", file=sys.stderr)
             return 1
+        except ValueError as exc:
+            print(f"Export failed: {exc}", file=sys.stderr)
+            return 2
 
     if args.backfill_keys:
         try:
@@ -145,6 +218,57 @@ def main() -> int:
                 "category": category.strip().lower(),
             }
         )
+
+    if args.precommit_check:
+        output, exit_code = run_precommit_check()
+        _print_output(output)
+        return exit_code
+
+    if args.dashboard:
+        try:
+            output = dashboard_payload()
+        except SheetsError as exc:
+            print(f"Dashboard failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json_output:
+            return _print_output(output)
+        print(render_dashboard(output))
+        return 0
+
+    if args.trend:
+        try:
+            return _print_output(trend_report())
+        except SheetsError as exc:
+            print(f"Trend failed: {exc}", file=sys.stderr)
+            return 1
+
+    if args.goals:
+        return _print_output(goals_report())
+
+    if args.goal_add:
+        name, target, current = args.goal_add
+        try:
+            goal = add_goal(name, float(target), float(current))
+        except ValueError as exc:
+            print(f"Goal add failed: {exc}", file=sys.stderr)
+            return 2
+        return _print_output({"goal_added": True, "goal": goal})
+
+    if args.goal_update:
+        name, current = args.goal_update
+        try:
+            goal = update_goal(name, float(current))
+        except ValueError as exc:
+            print(f"Goal update failed: {exc}", file=sys.stderr)
+            return 2
+        return _print_output({"goal_updated": True, "goal": goal})
+
+    if args.reflection:
+        try:
+            return _print_output(reflection_report())
+        except SheetsError as exc:
+            print(f"Reflection failed: {exc}", file=sys.stderr)
+            return 1
 
     image_path = Path(args.image)
 

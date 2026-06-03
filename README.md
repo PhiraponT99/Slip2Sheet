@@ -15,7 +15,16 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Backfill missing transaction keys and mark older duplicate rows.
 - Track daily and monthly budgets in reports and Summary.
 - Assign categories from configurable merchant category mappings.
-- No UI, dashboard, bank APIs, or stored credentials.
+- Show monthly spending insights from report data.
+- Export monthly reports to CSV or JSON files.
+- Evaluate monthly budget health against expected spend.
+- Run pre-commit safety checks before committing.
+- Show a terminal dashboard for daily and monthly status.
+- Forecast projected monthly spending from current pace.
+- Analyze spending trends across monthly sheets.
+- Track financial goals and progress.
+- Generate a simple daily spending reflection.
+- No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
 
@@ -98,6 +107,8 @@ Print parsed JSON and append to Google Sheets:
 python main.py --image ./samples/slip1.jpg --save
 ```
 
+Files in `samples/` must be sample/test slips only. Do not commit real personal payment slips.
+
 When `--save` succeeds, the output includes:
 
 ```json
@@ -139,6 +150,55 @@ Print a monthly spending report from Google Sheets:
 python main.py --month 2026-06
 ```
 
+Export a monthly report:
+
+```bash
+python main.py --month 2026-06 --export csv
+python main.py --month 2026-06 --export json
+```
+
+Print the terminal dashboard:
+
+```bash
+python main.py --dashboard
+```
+
+Print dashboard data as JSON:
+
+```bash
+python main.py --dashboard --json
+```
+
+Analyze spending trends across monthly sheets:
+
+```bash
+python main.py --trend
+```
+
+Show financial goals:
+
+```bash
+python main.py --goals
+```
+
+Add or replace a financial goal:
+
+```bash
+python main.py --goal-add "Emergency Fund" 50000 10000
+```
+
+Update a goal's current amount:
+
+```bash
+python main.py --goal-update "Emergency Fund" 12000
+```
+
+Show today's spending reflection:
+
+```bash
+python main.py --reflection
+```
+
 Daily report output:
 
 ```json
@@ -167,9 +227,220 @@ Monthly report output:
   "category_totals": {
     "food": 101.0
   },
+  "insights": {
+    "top_category": "food",
+    "top_category_amount": 101.0,
+    "top_merchant": "Lotus's",
+    "top_merchant_amount": 65.0,
+    "transaction_count": 2,
+    "average_transaction": 50.5
+  },
+  "budget_health": {
+    "monthly_budget": 9000.0,
+    "days_in_month": 30,
+    "current_day": 3,
+    "expected_spend": 900.0,
+    "actual_spend": 101.0,
+    "variance": -799.0,
+    "health_status": "GOOD",
+    "health_message": "You are spending below your planned budget."
+  },
+  "forecast": {
+    "current_day": 3,
+    "days_in_month": 30,
+    "actual_spend": 101.0,
+    "daily_average_so_far": 33.67,
+    "projected_monthly_spend": 1010.0,
+    "monthly_budget": 9000.0,
+    "projected_remaining_budget": 7990.0,
+    "forecast_status": "UNDER_BUDGET"
+  },
   "transactions": []
 }
 ```
+
+Monthly insights are calculated from non-duplicate rows in the selected monthly sheet:
+
+- `top_category`: category with the highest spending
+- `top_merchant`: merchant with the highest spending
+- `transaction_count`: number of transactions in the report
+- `average_transaction`: total expense divided by transaction count
+
+Monthly budget health compares actual spending with the expected spend for the selected month:
+
+- Current month uses today's local date.
+- Historical months use the last day of that month.
+- Future months use day 1.
+- `GOOD`: variance is less than or equal to -20% of expected spend.
+- `ON_TRACK`: variance is between -20% and +20% of expected spend.
+- `OVERSPENDING`: variance is greater than +20% of expected spend.
+
+Monthly spending forecast estimates the full-month result from the current pace:
+
+- Current month uses today's local day of month.
+- Historical months use the last day of that month.
+- Future months use day 1.
+- `UNDER_BUDGET`: projected spend is less than or equal to 80% of monthly budget.
+- `ON_TRACK`: projected spend is greater than 80% and less than or equal to 100% of monthly budget.
+- `OVER_BUDGET`: projected spend is greater than the monthly budget.
+
+Monthly exports are written to `exports/`:
+
+```text
+exports/2026-06.csv
+exports/2026-06.json
+```
+
+CSV exports use UTF-8 encoding and include one transaction row per line with:
+
+```text
+date, time, merchant, category, amount, original_amount, discount, payment_method, note, source_image, created_at, transaction_key
+```
+
+JSON exports include the selected month, total expense, category totals, insights, and transactions.
+
+Export command output:
+
+```json
+{
+  "month": "2026-06",
+  "export_format": "csv",
+  "export_file": "exports/2026-06.csv",
+  "transaction_count": 27
+}
+```
+
+Terminal dashboard output:
+
+```text
+══════════════════════════════════════
+Slip2Sheet Dashboard
+══════════════════════════════════════
+
+Today
+──────────────────────────────────────
+Spent:              50.00 THB
+Budget:            300.00 THB
+Remaining:         250.00 THB
+Status:                    OK
+
+Month
+──────────────────────────────────────
+Spent:              50.00 THB
+Budget:           9000.00 THB
+Remaining:        8950.00 THB
+Status:                  GOOD
+
+Top Category
+──────────────────────────────────────
+food (50.00 THB)
+
+Top Merchant
+──────────────────────────────────────
+Lotus's (50.00 THB)
+
+Insights
+──────────────────────────────────────
+Transactions:               1
+Average Spend:      50.00 THB
+
+Forecast
+──────────────────────────────────────
+Projected:         375.00 THB
+Remaining:        8625.00 THB
+Status:          UNDER_BUDGET
+
+══════════════════════════════════════
+```
+
+The dashboard reuses `today_report()` and `month_report()`. If the selected month has no sheet tab yet, it displays an empty dashboard instead of failing.
+
+Trend output:
+
+```json
+{
+  "months": [
+    {
+      "month": "2026-04",
+      "total_expense": 8200.0
+    },
+    {
+      "month": "2026-05",
+      "total_expense": 7600.0
+    },
+    {
+      "month": "2026-06",
+      "total_expense": 50.0
+    }
+  ],
+  "trend": {
+    "direction": "DOWN",
+    "change_percent": -99.3,
+    "message": "Spending decreased compared to previous month."
+  }
+}
+```
+
+Trend analysis reads every sheet tab named `YYYY-MM`, sorts months ascending, calculates each monthly total, and compares the latest month with the previous month. Less than 5% change is `STABLE`; positive change is `UP`; negative change is `DOWN`.
+
+Financial goals are stored in `goals.json`:
+
+```json
+{
+  "Emergency Fund": {
+    "target_amount": 50000,
+    "current_amount": 10000
+  }
+}
+```
+
+Goal output is sorted by progress descending:
+
+```json
+{
+  "goals": [
+    {
+      "name": "Emergency Fund",
+      "target_amount": 50000,
+      "current_amount": 10000,
+      "progress_percent": 20.0
+    }
+  ]
+}
+```
+
+The terminal dashboard includes a Goals section:
+
+```text
+Goals
+──────────────────────────────────────
+Emergency Fund           20.0%
+Debt Payoff              12.8%
+```
+
+Daily reflection output:
+
+```json
+{
+  "date": "2026-06-03",
+  "total_expense": 50.0,
+  "transaction_count": 1,
+  "reflection": {
+    "top_category": "food",
+    "top_merchant": "Lotus's",
+    "budget_status": "OK",
+    "message": "You stayed within your daily budget today."
+  }
+}
+```
+
+Reflection messages:
+
+- No transactions: `No spending recorded today.`
+- Within daily budget: `You stayed within your daily budget today.`
+- Over daily budget: `You exceeded your daily budget today.`
+
+The terminal dashboard includes a Reflection section with the daily message.
 
 Add or update a merchant alias:
 
@@ -366,4 +637,40 @@ Duplicate processing is prevented during a single watch session by tracking file
 
 ```bash
 python -m unittest discover -s tests
+```
+
+## Pre-Commit Safety Check
+
+Run before committing:
+
+```bash
+python main.py --precommit-check
+```
+
+The check runs unit tests and verifies that private or runtime files are not tracked by git:
+
+- `.env`
+- `credentials/`
+- service account JSON files
+- `exports/`
+- `incoming/`
+- `processed/`
+- `failed/`
+
+It also verifies that `.gitignore` contains the required safety entries and that any tracked sample images are documented as sample/test slips.
+
+Example output:
+
+```json
+{
+  "status": "PASS",
+  "checks": {
+    "tests": "PASS",
+    "env_not_tracked": "PASS",
+    "credentials_not_tracked": "PASS",
+    "runtime_folders_not_tracked": "PASS",
+    "gitignore_required_entries": "PASS",
+    "sample_images_documented": "PASS"
+  }
+}
 ```

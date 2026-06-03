@@ -20,6 +20,10 @@ Slip image
 -> Google Sheets
 -> Summary dashboard
 -> CLI reports
+-> Terminal dashboard
+-> Trend analysis
+-> Financial goals
+-> Daily reflection
 ```
 
 ## Current Capabilities
@@ -33,6 +37,15 @@ Slip image
 - V1.5.1 SCB Parser Improvement
 - V1.6 Merchant Alias
 - V1.7 Merchant Category Mapping
+- V1.7.1 Monthly Insights
+- V1.8 Report Export
+- V1.9 Monthly Budget Health Check
+- V1.10 Release Safety Check
+- V1.11 Terminal Dashboard
+- V1.12 Spending Forecast
+- V1.13 Spending Trend Analysis
+- V1.14 Financial Goal Tracking
+- V1.15 Daily Reflection
 
 ## Core Modules
 
@@ -44,8 +57,15 @@ Slip image
 - `expense_tracker/summary.py`
 - `expense_tracker/reports.py`
 - `expense_tracker/maintenance.py`
+- `expense_tracker/exports.py`
+- `expense_tracker/safety.py`
+- `expense_tracker/dashboard.py`
+- `expense_tracker/trends.py`
+- `expense_tracker/goals.py`
+- `expense_tracker/reflection.py`
 - `merchant_aliases.json`
 - `merchant_categories.json`
+- `goals.json`
 
 ## Hard Rules
 
@@ -57,6 +77,7 @@ Slip image
 - Do not change sheet schema without migration/backfill support.
 - Do not connect to bank APIs.
 - Do not store bank credentials.
+- Run `python main.py --precommit-check` before committing.
 - Keep changes small and incremental.
 - Preserve backward compatibility where possible.
 
@@ -78,6 +99,7 @@ date|time|merchant|amount
 - Service account JSON must not be committed.
 - Raw private keys must never be pasted into docs.
 - Use `.env.example` for placeholders only.
+- Runtime folders such as `exports/`, `incoming/`, `processed/`, and `failed/` must not be committed.
 
 ## Preferred Development Style
 

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from expense_tracker.reports import (
     calculate_daily_report,
     calculate_month_report,
+    calculate_monthly_insights,
     rows_to_transactions,
 )
 
@@ -131,6 +132,31 @@ class ReportsTest(unittest.TestCase):
             report["category_totals"],
             {"food": 65.0, "drink": 36.0, "transport": 120.5},
         )
+        self.assertEqual(
+            report["insights"],
+            {
+                "top_category": "transport",
+                "top_category_amount": 120.5,
+                "top_merchant": "Taxi",
+                "top_merchant_amount": 120.5,
+                "transaction_count": 3,
+                "average_transaction": 73.83,
+            },
+        )
+        self.assertEqual(report["budget_health"]["monthly_budget"], 9000.0)
+        self.assertEqual(report["budget_health"]["actual_spend"], 221.5)
+        self.assertIn(report["budget_health"]["health_status"], {
+            "GOOD",
+            "ON_TRACK",
+            "OVERSPENDING",
+        })
+        self.assertEqual(report["forecast"]["monthly_budget"], 9000.0)
+        self.assertEqual(report["forecast"]["actual_spend"], 221.5)
+        self.assertIn(report["forecast"]["forecast_status"], {
+            "UNDER_BUDGET",
+            "ON_TRACK",
+            "OVER_BUDGET",
+        })
         self.assertEqual(len(report["transactions"]), 3)
 
     def test_rows_to_transactions_applies_merchant_aliases(self) -> None:
@@ -169,6 +195,65 @@ class ReportsTest(unittest.TestCase):
             transactions = rows_to_transactions(rows)
 
         self.assertEqual(transactions[0]["category"], "food")
+
+    def test_monthly_insights_empty_month(self) -> None:
+        insights = calculate_monthly_insights([])
+
+        self.assertEqual(
+            insights,
+            {
+                "top_category": None,
+                "top_category_amount": None,
+                "top_merchant": None,
+                "top_merchant_amount": None,
+                "transaction_count": 0,
+                "average_transaction": 0.0,
+            },
+        )
+
+    def test_monthly_insights_single_transaction(self) -> None:
+        transactions = [
+            {
+                "merchant": "Lotus's",
+                "category": "food",
+                "amount": 50.0,
+            }
+        ]
+
+        insights = calculate_monthly_insights(transactions)
+
+        self.assertEqual(insights["top_category"], "food")
+        self.assertEqual(insights["top_category_amount"], 50.0)
+        self.assertEqual(insights["top_merchant"], "Lotus's")
+        self.assertEqual(insights["top_merchant_amount"], 50.0)
+        self.assertEqual(insights["transaction_count"], 1)
+        self.assertEqual(insights["average_transaction"], 50.0)
+
+    def test_monthly_insights_multiple_categories(self) -> None:
+        transactions = [
+            {"merchant": "Rice Shop", "category": "food", "amount": 65.0},
+            {"merchant": "Cafe", "category": "drink", "amount": 36.0},
+            {"merchant": "Taxi", "category": "transport", "amount": 120.5},
+        ]
+
+        insights = calculate_monthly_insights(transactions)
+
+        self.assertEqual(insights["top_category"], "transport")
+        self.assertEqual(insights["top_category_amount"], 120.5)
+        self.assertEqual(insights["average_transaction"], 73.83)
+
+    def test_monthly_insights_multiple_merchants(self) -> None:
+        transactions = [
+            {"merchant": "Lotus's", "category": "food", "amount": 50.0},
+            {"merchant": "Cafe", "category": "drink", "amount": 40.0},
+            {"merchant": "Lotus's", "category": "food", "amount": 70.0},
+        ]
+
+        insights = calculate_monthly_insights(transactions)
+
+        self.assertEqual(insights["top_merchant"], "Lotus's")
+        self.assertEqual(insights["top_merchant_amount"], 120.0)
+        self.assertEqual(insights["transaction_count"], 3)
 
 
 if __name__ == "__main__":
