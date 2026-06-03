@@ -1,0 +1,13 @@
+# Runtime folders
+incoming/
+processed/
+failed/
+
+# Credentials
+credentials/
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
