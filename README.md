@@ -30,7 +30,7 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Combine daily, weekly, and monthly reflections into one report.
 - Render the combined reflection report as Markdown.
 - Export the Markdown reflection report to a `.md` file.
-- Provide an initial LINE Bot webhook for text and image message connectivity.
+- Provide a LINE Bot webhook for text replies and image download storage.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -683,7 +683,7 @@ The export command creates `reports/` automatically and overwrites `reports/refl
 
 ## LINE Bot Webhook
 
-V1.23 includes a minimal LINE Bot webhook receiver for text and image message connectivity.
+V1.24 includes a minimal LINE Bot webhook receiver for text replies and image download storage.
 
 Run:
 
@@ -716,10 +716,14 @@ Behavior:
 - Receives LINE webhook events.
 - Supports text and image message events.
 - Replies `Hello from Slip2Sheet` to any text message.
-- Replies `Image received by Slip2Sheet` to any image message.
+- Downloads image messages from the LINE Content API.
+- Saves image messages as `incoming/line/line_<message_id>.jpg`.
+- Creates `incoming/line/` automatically if missing.
+- Replies `Slip image received.` when image download succeeds.
+- Replies `Failed to download image.` when image download fails.
 - Ignores unsupported message types safely.
 
-This receiver does not download images, run OCR, create transactions, or write to Google Sheets.
+This receiver does not run OCR, parse slips, create transactions, or write to Google Sheets.
 
 Troubleshooting `401 Unauthorized` from `/webhook`:
 

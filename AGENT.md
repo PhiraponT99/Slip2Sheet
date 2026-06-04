@@ -32,6 +32,7 @@ Slip image
 -> Reflection report file export
 -> LINE text webhook
 -> LINE image message receiver
+-> LINE image download storage
 ```
 
 ## Current Capabilities
@@ -65,6 +66,7 @@ Slip image
 - V1.22.1 LINE Webhook Env Loading Fix
 - V1.22.2 LINE Webhook Signature Mismatch Fix
 - V1.23 LINE Image Message Receiver
+- V1.24 LINE Image Download
 
 ## Core Modules
 
@@ -108,6 +110,7 @@ Slip image
 - LINE webhook logs may show whether secrets are loaded, but must never print secret or token values.
 - LINE webhook runtime logs should stay limited to startup/config presence unless a task explicitly asks for temporary diagnostics.
 - LINE signature diagnostics must never print raw request bodies, full signatures, channel secrets, or access tokens.
+- LINE image downloads must save under `incoming/line/` unless a task explicitly defines a migration.
 - Keep changes small and incremental.
 - Preserve backward compatibility where possible.
 

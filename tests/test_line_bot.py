@@ -5,14 +5,18 @@ import hashlib
 import hmac
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from expense_tracker.line_bot import (
     DEFAULT_REPLY_TEXT,
-    IMAGE_REPLY_TEXT,
+    IMAGE_DOWNLOAD_FAILURE_TEXT,
+    IMAGE_DOWNLOAD_SUCCESS_TEXT,
     LineBotError,
     build_text_reply_payload,
+    download_line_image,
     generate_line_signature,
     handle_line_webhook,
     signature_diagnostics,
@@ -131,7 +135,78 @@ class LineBotTest(unittest.TestCase):
             },
         )
 
-    def test_image_message_reply(self) -> None:
+    def test_image_saved_successfully(self) -> None:
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "type": "message",
+                        "replyToken": "reply-token",
+                        "message": {
+                            "type": "image",
+                            "id": "image-id",
+                        },
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        replies = []
+        downloaded = []
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(
+                {
+                    "reply_token": reply_token,
+                    "text": text,
+                    "token": token,
+                }
+            ),
+            image_download_fn=lambda message_id, token: downloaded.append(
+                {"message_id": message_id, "token": token}
+            ),
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(downloaded, [{"message_id": "image-id", "token": "access-token"}])
+        self.assertEqual(replies, [
+            {
+                "reply_token": "reply-token",
+                "text": IMAGE_DOWNLOAD_SUCCESS_TEXT,
+                "token": "access-token",
+            }
+        ])
+
+    def test_image_directory_auto_created(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self) -> bytes:
+                return b"image-bytes"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "incoming" / "line"
+            with patch("urllib.request.urlopen", return_value=FakeResponse()):
+                output_path = download_line_image(
+                    "531224567891234567",
+                    "access-token",
+                    output_dir=output_dir,
+                )
+
+            self.assertEqual(
+                output_path,
+                output_dir / "line_531224567891234567.jpg",
+            )
+            self.assertEqual(output_path.read_bytes(), b"image-bytes")
+
+    def test_failed_download_returns_error_reply(self) -> None:
         body = json.dumps(
             {
                 "events": [
@@ -160,13 +235,16 @@ class LineBotTest(unittest.TestCase):
                     "token": token,
                 }
             ),
+            image_download_fn=lambda message_id, token: (_ for _ in ()).throw(
+                RuntimeError("download failed")
+            ),
         )
 
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
         self.assertEqual(replies, [
             {
                 "reply_token": "reply-token",
-                "text": IMAGE_REPLY_TEXT,
+                "text": IMAGE_DOWNLOAD_FAILURE_TEXT,
                 "token": "access-token",
             }
         ])
