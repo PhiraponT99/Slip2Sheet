@@ -27,6 +27,8 @@ Slip image
 -> Reflection history
 -> Weekly reflection
 -> Monthly reflection
+-> Reflection report
+-> Reflection Markdown report
 ```
 
 ## Current Capabilities
@@ -53,6 +55,8 @@ Slip image
 - V1.17 Weekly Reflection Summary
 - V1.17.1 Weekly Reflection Message Refinement
 - V1.18 Monthly Reflection Summary
+- V1.19 Reflection Report
+- V1.20 Reflection Report Markdown Export
 
 ## Core Modules
 
@@ -73,6 +77,8 @@ Slip image
 - `expense_tracker/reflection_history.py`
 - `expense_tracker/weekly_reflection.py`
 - `expense_tracker/monthly_reflection.py`
+- `expense_tracker/reflection_report.py`
+- `expense_tracker/reflection_markdown.py`
 - `merchant_aliases.json`
 - `merchant_categories.json`
 - `goals.json`

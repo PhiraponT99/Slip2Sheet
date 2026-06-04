@@ -7,6 +7,8 @@ from expense_tracker.goals import goals_report
 from expense_tracker.monthly_reflection import monthly_reflection_report
 from expense_tracker.reflection import calculate_reflection
 from expense_tracker.reflection_history import reflection_history_report
+from expense_tracker.reflection_markdown import render_reflection_report_markdown
+from expense_tracker.reflection_report import reflection_report
 from expense_tracker.weekly_reflection import weekly_reflection_report
 from expense_tracker.reports import (
     calculate_daily_report,
@@ -28,6 +30,7 @@ def dashboard_payload(
     reflection_history_fn: Callable[[], dict[str, Any]] = reflection_history_report,
     weekly_reflection_fn: Callable[[], dict[str, Any]] = weekly_reflection_report,
     monthly_reflection_fn: Callable[[], dict[str, Any]] = monthly_reflection_report,
+    reflection_report_fn: Callable[[], dict[str, Any]] = reflection_report,
     current_date: date | None = None,
 ) -> dict[str, Any]:
     if current_date is None:
@@ -51,6 +54,10 @@ def dashboard_payload(
         monthly_reflection_data = monthly_reflection_fn()
     except SheetsError:
         monthly_reflection_data = {}
+    try:
+        reflection_report_data = reflection_report_fn()
+    except SheetsError:
+        reflection_report_data = {}
 
     return {
         "today": today_data,
@@ -62,6 +69,10 @@ def dashboard_payload(
         "reflection_history": reflection_history_data.get("summary", {}),
         "weekly_reflection": weekly_reflection_data,
         "monthly_reflection": monthly_reflection_data,
+        "reflection_report": reflection_report_data,
+        "reflection_report_markdown": render_reflection_report_markdown(reflection_report_data)
+        if reflection_report_data
+        else "",
     }
 
 
@@ -77,6 +88,10 @@ def render_dashboard(payload: dict[str, Any]) -> str:
     weekly_summary = weekly_reflection.get("summary", {})
     monthly_reflection = payload.get("monthly_reflection", {})
     monthly_summary = monthly_reflection.get("summary", {})
+    reflection_report = payload.get("reflection_report", {})
+    report_daily = reflection_report.get("daily", {})
+    report_weekly = reflection_report.get("weekly", {})
+    report_monthly = reflection_report.get("monthly", {})
     month_status = month.get("budget_health", {}).get(
         "health_status", month.get("budget_status", "OK")
     )
@@ -193,6 +208,13 @@ def render_dashboard(payload: dict[str, Any]) -> str:
             str(monthly_summary.get("no_spending_days", 0)),
         ),
         f"Message: {monthly_reflection.get('message', 'No spending recorded this month.')}",
+        "",
+        "Reflection Report",
+        _rule("─"),
+        f"Daily: {report_daily.get('message', 'No spending recorded today.')}",
+        f"Weekly: {report_weekly.get('message', 'No spending recorded this week.')}",
+        f"Monthly: {report_monthly.get('message', 'No spending recorded this month.')}",
+        f"Overall: {reflection_report.get('overall_message', 'No spending recorded yet.')}",
         "",
         _rule("═"),
     ]

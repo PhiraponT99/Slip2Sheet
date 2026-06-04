@@ -24,10 +24,12 @@
 - V1.17 Weekly Reflection Summary
 - V1.17.1 Weekly Reflection Message Refinement
 - V1.18 Monthly Reflection Summary
+- V1.19 Reflection Report
+- V1.20 Reflection Report Markdown Export
 
 ## Proposed Milestones
 
-## V1.19 Better Parser Test Dataset
+## V1.21 Better Parser Test Dataset
 
 ### Goal
 
@@ -51,7 +53,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.20 Advanced Monthly Financial Insights
+## V1.22 Advanced Monthly Financial Insights
 
 ### Goal
 

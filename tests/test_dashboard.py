@@ -116,6 +116,12 @@ class DashboardTest(unittest.TestCase):
                 },
                 "message": "You stayed within budget on most spending days this month.",
             },
+            reflection_report_fn=lambda: {
+                "daily": {"message": "You stayed within your daily budget today."},
+                "weekly": {"message": "You stayed within budget on all spending days this week."},
+                "monthly": {"message": "You stayed within budget on most spending days this month."},
+                "overall_message": "Your spending is currently under control.",
+            },
             current_date=date(2026, 6, 4),
         )
 
@@ -152,6 +158,9 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Monthly Reflection", rendered)
         self.assertIn("1250.00 THB", rendered)
         self.assertIn("You stayed within budget on most spending days this month.", rendered)
+        self.assertIn("Reflection Report", rendered)
+        self.assertIn("Overall: Your spending is currently under control.", rendered)
+        self.assertIn("# Slip2Sheet Reflection Report", payload["reflection_report_markdown"])
 
     def test_dashboard_without_data(self) -> None:
         payload = dashboard_payload(
@@ -161,6 +170,7 @@ class DashboardTest(unittest.TestCase):
             reflection_history_fn=lambda: {"summary": {}},
             weekly_reflection_fn=lambda: {},
             monthly_reflection_fn=lambda: {},
+            reflection_report_fn=lambda: {},
             current_date=date(2026, 6, 4),
         )
 
@@ -183,6 +193,7 @@ class DashboardTest(unittest.TestCase):
             reflection_history_fn=lambda: {"summary": {}},
             weekly_reflection_fn=lambda: {},
             monthly_reflection_fn=lambda: {},
+            reflection_report_fn=lambda: {},
             current_date=date(2026, 6, 4),
         )
 
@@ -198,6 +209,8 @@ class DashboardTest(unittest.TestCase):
                 "reflection_history",
                 "weekly_reflection",
                 "monthly_reflection",
+                "reflection_report",
+                "reflection_report_markdown",
             },
         )
         self.assertEqual(payload["insights"]["top_category"], "food")

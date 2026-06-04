@@ -340,6 +340,50 @@ class MainCliTest(unittest.TestCase):
         monthly_reflection_report.assert_called_once_with()
         self.assertEqual(json.loads(stdout.getvalue()), output)
 
+    def test_reflection_report_command(self) -> None:
+        argv = ["main.py", "--reflection-report"]
+        output = {
+            "date": "2026-06-04",
+            "daily": {"message": "You stayed within your daily budget today."},
+            "weekly": {"message": "You stayed within budget on all spending days this week."},
+            "monthly": {"message": "You stayed within budget on most spending days this month."},
+            "overall_message": "Your spending is currently under control.",
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.combined_reflection_report", return_value=output) as combined_reflection_report,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        combined_reflection_report.assert_called_once_with()
+        self.assertEqual(json.loads(stdout.getvalue()), output)
+
+    def test_reflection_report_markdown_command(self) -> None:
+        argv = ["main.py", "--reflection-report-md"]
+        report = {
+            "date": "2026-06-04",
+            "daily": {},
+            "weekly": {},
+            "monthly": {},
+            "overall_message": "Your spending is currently under control.",
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.combined_reflection_report", return_value=report) as combined_reflection_report,
+            patch("main.render_reflection_report_markdown", return_value="# Report") as render_markdown,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        combined_reflection_report.assert_called_once_with()
+        render_markdown.assert_called_once_with(report)
+        self.assertEqual(stdout.getvalue().strip(), "# Report")
+
 
 if __name__ == "__main__":
     unittest.main()

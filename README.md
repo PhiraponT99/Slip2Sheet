@@ -27,6 +27,8 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Store and summarize daily reflection history for the current month.
 - Summarize current-week spending reflections.
 - Summarize current-month spending reflections.
+- Combine daily, weekly, and monthly reflections into one report.
+- Render the combined reflection report as Markdown.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -218,6 +220,18 @@ Show current-month reflection summary:
 
 ```bash
 python main.py --monthly-reflection
+```
+
+Show combined reflection report:
+
+```bash
+python main.py --reflection-report
+```
+
+Show combined reflection report as Markdown:
+
+```bash
+python main.py --reflection-report-md
 ```
 
 Daily report output:
@@ -558,6 +572,93 @@ Monthly reflection message rules:
 - Over-budget days greater than or equal to OK days: `You exceeded your budget on several spending days this month.`
 
 The terminal dashboard includes a Monthly Reflection section with monthly totals, spending day counts, budget performance, and the monthly message.
+
+Combined reflection report output:
+
+```json
+{
+  "date": "2026-06-04",
+  "daily": {
+    "total_expense": 50.0,
+    "transaction_count": 1,
+    "top_category": "food",
+    "top_merchant": "Lotus's",
+    "budget_status": "OK",
+    "message": "You stayed within your daily budget today."
+  },
+  "weekly": {
+    "week_start": "2026-06-01",
+    "week_end": "2026-06-07",
+    "total_expense": 250.0,
+    "transaction_count": 5,
+    "total_days_with_transactions": 3,
+    "spending_day_ratio": 0.43,
+    "message": "You stayed within budget on all spending days this week."
+  },
+  "monthly": {
+    "month": "2026-06",
+    "days_in_month": 30,
+    "total_expense": 1250.0,
+    "transaction_count": 18,
+    "total_days_with_transactions": 12,
+    "spending_day_ratio": 0.4,
+    "message": "You stayed within budget on most spending days this month."
+  },
+  "overall_message": "Your spending is currently under control."
+}
+```
+
+The terminal dashboard includes a Reflection Report section:
+
+```text
+Reflection Report
+──────────────────────────────────────
+Daily: You stayed within your daily budget today.
+Weekly: You stayed within budget on all spending days this week.
+Monthly: You stayed within budget on most spending days this month.
+Overall: Your spending is currently under control.
+```
+
+Markdown reflection report output:
+
+```markdown
+# Slip2Sheet Reflection Report
+
+Date: 2026-06-04
+
+## Daily Reflection
+
+Total Expense: 0.0
+Transaction Count: 0
+Top Category: -
+Top Merchant: -
+
+Message: No spending recorded today.
+
+## Weekly Reflection
+
+Week: 2026-06-01 to 2026-06-07
+Total Expense: 50.0
+Transaction Count: 1
+Spending Days: 1
+Spending Day Ratio: 0.14
+
+Message: You stayed within budget on all spending days this week.
+
+## Monthly Reflection
+
+Month: 2026-06
+Total Expense: 50.0
+Transaction Count: 1
+Spending Days: 1
+Spending Day Ratio: 0.03
+
+Message: You stayed within budget on all spending days this month.
+
+## Overall
+
+Your spending is currently under control.
+```
 
 Add or update a merchant alias:
 

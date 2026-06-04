@@ -15,7 +15,9 @@ from expense_tracker.monthly_reflection import monthly_reflection_report
 from expense_tracker.ocr import OcrError, run_ocr
 from expense_tracker.parser import extract_transaction
 from expense_tracker.reflection_history import reflection_history_report
+from expense_tracker.reflection_markdown import render_reflection_report_markdown
 from expense_tracker.reflection import reflection_report
+from expense_tracker.reflection_report import reflection_report as combined_reflection_report
 from expense_tracker.reports import month_report, today_report
 from expense_tracker.safety import run_precommit_check
 from expense_tracker.sheets import SheetsError, append_transaction_to_sheet
@@ -131,6 +133,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print current-month spending reflection summary.",
     )
+    parser.add_argument(
+        "--reflection-report",
+        action="store_true",
+        help="Print combined daily, weekly, and monthly reflection report.",
+    )
+    parser.add_argument(
+        "--reflection-report-md",
+        action="store_true",
+        help="Print combined reflection report as Markdown.",
+    )
     return parser.parse_args()
 
 
@@ -156,13 +168,15 @@ def main() -> int:
             args.reflection_history,
             args.weekly_reflection,
             args.monthly_reflection,
+            args.reflection_report,
+            args.reflection_report_md,
         )
         if selected
     )
 
     if command_count != 1:
         print(
-            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, --reflection, --reflection-history, --weekly-reflection, or --monthly-reflection.",
+            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, --reflection, --reflection-history, --weekly-reflection, --monthly-reflection, --reflection-report, or --reflection-report-md.",
             file=sys.stderr,
         )
         return 2
@@ -299,6 +313,13 @@ def main() -> int:
 
     if args.monthly_reflection:
         return _print_output(monthly_reflection_report())
+
+    if args.reflection_report:
+        return _print_output(combined_reflection_report())
+
+    if args.reflection_report_md:
+        print(render_reflection_report_markdown(combined_reflection_report()))
+        return 0
 
     image_path = Path(args.image)
 
