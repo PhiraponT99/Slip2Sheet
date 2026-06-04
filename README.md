@@ -30,7 +30,7 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Combine daily, weekly, and monthly reflections into one report.
 - Render the combined reflection report as Markdown.
 - Export the Markdown reflection report to a `.md` file.
-- Provide an initial LINE Bot text webhook skeleton.
+- Provide an initial LINE Bot webhook for text and image message connectivity.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -683,7 +683,7 @@ The export command creates `reports/` automatically and overwrites `reports/refl
 
 ## LINE Bot Webhook
 
-V1.22 includes a minimal LINE Bot webhook skeleton for text connectivity only.
+V1.23 includes a minimal LINE Bot webhook receiver for text and image message connectivity.
 
 Run:
 
@@ -714,10 +714,12 @@ Behavior:
 
 - Verifies `X-Line-Signature`.
 - Receives LINE webhook events.
-- Supports text messages only.
+- Supports text and image message events.
 - Replies `Hello from Slip2Sheet` to any text message.
+- Replies `Image received by Slip2Sheet` to any image message.
+- Ignores unsupported message types safely.
 
-This skeleton does not process images, run OCR, create transactions, or write to Google Sheets.
+This receiver does not download images, run OCR, create transactions, or write to Google Sheets.
 
 Troubleshooting `401 Unauthorized` from `/webhook`:
 
@@ -730,15 +732,7 @@ Troubleshooting `401 Unauthorized` from `/webhook`:
 - Confirm the LINE webhook URL ends with `/webhook`.
 - Confirm ngrok points to `localhost:8000`.
 
-The webhook logs only boolean presence checks for LINE config values. It must never print the actual channel secret or access token.
-
-Signature debug logs are safe and include only:
-
-- body length
-- whether `X-Line-Signature` exists
-- whether `LINE_CHANNEL_SECRET` exists
-- first 8 characters of the received signature
-- first 8 characters of the generated signature
+The webhook logs only boolean presence checks for LINE config values. It must never print the actual channel secret, access token, full signature, signature prefix, or raw request body.
 
 The webhook must verify the exact raw request body bytes from LINE. Do not decode, re-encode, strip, parse, or normalize the body before signature verification.
 

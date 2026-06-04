@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply"
 DEFAULT_REPLY_TEXT = "Hello from Slip2Sheet"
+IMAGE_REPLY_TEXT = "Image received by Slip2Sheet"
 
 
 class LineBotError(Exception):
@@ -35,22 +36,10 @@ def verify_line_signature(
         generate_line_signature(body, channel_secret) if channel_secret else ""
     )
 
-    result = bool(signature and channel_secret) and hmac.compare_digest(
+    return bool(signature and channel_secret) and hmac.compare_digest(
         expected_signature,
         signature,
     )
-
-    print("[DEBUG] LINE signature body length:", len(body))
-    print("[DEBUG] LINE signature exists:", bool(signature))
-    print("[DEBUG] LINE channel secret exists:", bool(channel_secret))
-    print(
-        "[DEBUG] LINE received signature prefix:",
-        signature[:8] if signature else "",
-    )
-    print("[DEBUG] LINE generated signature prefix:", expected_signature[:8])
-    print("[DEBUG] LINE compare_digest result:", result)
-
-    return result
 
 
 def generate_line_signature(body: bytes, channel_secret: str) -> str:
@@ -103,6 +92,11 @@ def handle_line_webhook(
             if reply_token:
                 reply_fn(reply_token, DEFAULT_REPLY_TEXT, channel_access_token)
                 reply_count += 1
+        elif _is_image_message_event(event):
+            reply_token = event.get("replyToken")
+            if reply_token:
+                reply_fn(reply_token, IMAGE_REPLY_TEXT, channel_access_token)
+                reply_count += 1
 
     return {
         "status": "ok",
@@ -145,4 +139,11 @@ def _is_text_message_event(event: dict[str, Any]) -> bool:
     return (
         event.get("type") == "message"
         and event.get("message", {}).get("type") == "text"
+    )
+
+
+def _is_image_message_event(event: dict[str, Any]) -> bool:
+    return (
+        event.get("type") == "message"
+        and event.get("message", {}).get("type") == "image"
     )

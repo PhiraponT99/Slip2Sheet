@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from expense_tracker.line_bot import (
     DEFAULT_REPLY_TEXT,
+    IMAGE_REPLY_TEXT,
     LineBotError,
     build_text_reply_payload,
     generate_line_signature,
@@ -129,6 +130,80 @@ class LineBotTest(unittest.TestCase):
                 ],
             },
         )
+
+    def test_image_message_reply(self) -> None:
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "type": "message",
+                        "replyToken": "reply-token",
+                        "message": {
+                            "type": "image",
+                            "id": "image-id",
+                        },
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        replies = []
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(
+                {
+                    "reply_token": reply_token,
+                    "text": text,
+                    "token": token,
+                }
+            ),
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(replies, [
+            {
+                "reply_token": "reply-token",
+                "text": IMAGE_REPLY_TEXT,
+                "token": "access-token",
+            }
+        ])
+
+    def test_unsupported_message_type_is_ignored(self) -> None:
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "type": "message",
+                        "replyToken": "reply-token",
+                        "message": {
+                            "type": "sticker",
+                            "id": "sticker-id",
+                        },
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        replies = []
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(
+                {
+                    "reply_token": reply_token,
+                    "text": text,
+                    "token": token,
+                }
+            ),
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 0})
+        self.assertEqual(replies, [])
 
     def test_env_config_loaded(self) -> None:
         with (
