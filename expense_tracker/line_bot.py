@@ -9,6 +9,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from expense_tracker.ocr import run_ocr
+
 
 LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply"
 LINE_CONTENT_ENDPOINT = "https://api-data.line.me/v2/bot/message/{message_id}/content"
@@ -16,6 +18,7 @@ DEFAULT_REPLY_TEXT = "Hello from Slip2Sheet"
 IMAGE_REPLY_TEXT = "Image received by Slip2Sheet"
 IMAGE_DOWNLOAD_SUCCESS_TEXT = "Slip image received."
 IMAGE_DOWNLOAD_FAILURE_TEXT = "Failed to download image."
+OCR_FAILURE_TEXT = "OCR failed."
 DEFAULT_LINE_IMAGE_DIR = Path("incoming") / "line"
 
 
@@ -81,6 +84,7 @@ def handle_line_webhook(
     channel_access_token: str,
     reply_fn: Callable[[str, str, str], None] = None,
     image_download_fn: Callable[[str, str], Path] = None,
+    ocr_fn: Callable[[Path], str] = None,
 ) -> dict[str, Any]:
     if not verify_line_signature(body, signature, channel_secret):
         raise LineBotError("Invalid LINE signature.")
@@ -108,10 +112,25 @@ def handle_line_webhook(
                         raise LineBotError("LINE image message id is missing.")
                     if image_download_fn is None:
                         image_download_fn = download_line_image
-                    image_download_fn(message_id, channel_access_token)
+                    saved_file = image_download_fn(message_id, channel_access_token)
                 except Exception as exc:
                     print("[ERROR] Failed to download LINE image:", str(exc))
                     reply_text = IMAGE_DOWNLOAD_FAILURE_TEXT
+                else:
+                    try:
+                        if ocr_fn is None:
+                            ocr_fn = run_ocr
+                        ocr_text = ocr_fn(saved_file)
+                        reply_text = build_ocr_reply_text(ocr_text)
+                        print("[INFO] LINE image message_id:", message_id)
+                        print("[INFO] LINE image saved_file:", str(saved_file))
+                        print("[INFO] LINE image ocr_success:", True)
+                    except Exception as exc:
+                        print("[ERROR] LINE OCR failed:", str(exc))
+                        print("[INFO] LINE image message_id:", message_id)
+                        print("[INFO] LINE image saved_file:", str(saved_file))
+                        print("[INFO] LINE image ocr_success:", False)
+                        reply_text = OCR_FAILURE_TEXT
                 reply_fn(reply_token, reply_text, channel_access_token)
                 reply_count += 1
 
@@ -133,6 +152,13 @@ def build_text_reply_payload(reply_token: str, text: str = DEFAULT_REPLY_TEXT) -
             }
         ],
     }
+
+
+def build_ocr_reply_text(ocr_text: str, limit: int = 500) -> str:
+    text = ocr_text or ""
+    if len(text) > limit:
+        text = text[:limit] + "..."
+    return f"OCR completed.\n\nDetected text:\n\n{text}"
 
 
 def send_line_reply(reply_token: str, text: str, channel_access_token: str) -> None:

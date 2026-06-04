@@ -30,7 +30,7 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Combine daily, weekly, and monthly reflections into one report.
 - Render the combined reflection report as Markdown.
 - Export the Markdown reflection report to a `.md` file.
-- Provide a LINE Bot webhook for text replies and image download storage.
+- Provide a LINE Bot webhook for text replies, image download storage, and OCR text extraction.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -683,7 +683,7 @@ The export command creates `reports/` automatically and overwrites `reports/refl
 
 ## LINE Bot Webhook
 
-V1.24 includes a minimal LINE Bot webhook receiver for text replies and image download storage.
+V1.25 includes a LINE Bot webhook receiver for text replies, image download storage, and OCR text extraction.
 
 Run:
 
@@ -719,11 +719,22 @@ Behavior:
 - Downloads image messages from the LINE Content API.
 - Saves image messages as `incoming/line/line_<message_id>.jpg`.
 - Creates `incoming/line/` automatically if missing.
-- Replies `Slip image received.` when image download succeeds.
+- Runs the existing Slip2Sheet OCR module on downloaded image messages.
+- Replies with `OCR completed.` and the first 500 characters of detected text when OCR succeeds.
+- Appends `...` when detected text is longer than 500 characters.
+- Replies `OCR failed.` when OCR fails.
 - Replies `Failed to download image.` when image download fails.
 - Ignores unsupported message types safely.
 
-This receiver does not run OCR, parse slips, create transactions, or write to Google Sheets.
+This receiver does not parse slips, create transactions, write to Google Sheets, or run reflections.
+
+LINE image logs include only:
+
+- `message_id`
+- `saved_file`
+- `ocr_success`
+
+The webhook must not log OCR content.
 
 Troubleshooting `401 Unauthorized` from `/webhook`:
 
@@ -735,6 +746,8 @@ Troubleshooting `401 Unauthorized` from `/webhook`:
 - Restart `python line_webhook.py` after editing `.env`.
 - Confirm the LINE webhook URL ends with `/webhook`.
 - Confirm ngrok points to `localhost:8000`.
+
+If webhook processing succeeds but Windows shows `WinError 10053`, it usually means the client or ngrok closed the connection after processing. Slip2Sheet handles this gracefully and logs a warning instead of a traceback.
 
 The webhook logs only boolean presence checks for LINE config values. It must never print the actual channel secret, access token, full signature, signature prefix, or raw request body.
 

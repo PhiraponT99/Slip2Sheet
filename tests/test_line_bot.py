@@ -13,8 +13,9 @@ from unittest.mock import patch
 from expense_tracker.line_bot import (
     DEFAULT_REPLY_TEXT,
     IMAGE_DOWNLOAD_FAILURE_TEXT,
-    IMAGE_DOWNLOAD_SUCCESS_TEXT,
     LineBotError,
+    OCR_FAILURE_TEXT,
+    build_ocr_reply_text,
     build_text_reply_payload,
     download_line_image,
     generate_line_signature,
@@ -135,7 +136,7 @@ class LineBotTest(unittest.TestCase):
             },
         )
 
-    def test_image_saved_successfully(self) -> None:
+    def test_ocr_success(self) -> None:
         body = json.dumps(
             {
                 "events": [
@@ -152,6 +153,8 @@ class LineBotTest(unittest.TestCase):
         ).encode("utf-8")
         replies = []
         downloaded = []
+        ocr_paths = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
 
         result = handle_line_webhook(
             body,
@@ -167,18 +170,71 @@ class LineBotTest(unittest.TestCase):
             ),
             image_download_fn=lambda message_id, token: downloaded.append(
                 {"message_id": message_id, "token": token}
-            ),
+            ) or saved_path,
+            ocr_fn=lambda image_path: ocr_paths.append(image_path) or "สินค้า 50 บาท",
         )
 
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
         self.assertEqual(downloaded, [{"message_id": "image-id", "token": "access-token"}])
+        self.assertEqual(ocr_paths, [saved_path])
         self.assertEqual(replies, [
             {
                 "reply_token": "reply-token",
-                "text": IMAGE_DOWNLOAD_SUCCESS_TEXT,
+                "text": "OCR completed.\n\nDetected text:\n\nสินค้า 50 บาท",
                 "token": "access-token",
             }
         ])
+
+    def test_ocr_failure(self) -> None:
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "type": "message",
+                        "replyToken": "reply-token",
+                        "message": {
+                            "type": "image",
+                            "id": "image-id",
+                        },
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        replies = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(
+                {
+                    "reply_token": reply_token,
+                    "text": text,
+                    "token": token,
+                }
+            ),
+            image_download_fn=lambda message_id, token: saved_path,
+            ocr_fn=lambda image_path: (_ for _ in ()).throw(RuntimeError("ocr failed")),
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(replies, [
+            {
+                "reply_token": "reply-token",
+                "text": OCR_FAILURE_TEXT,
+                "token": "access-token",
+            }
+        ])
+
+    def test_ocr_reply_text_truncates_to_500_characters(self) -> None:
+        text = "x" * 501
+
+        self.assertEqual(
+            build_ocr_reply_text(text),
+            f"OCR completed.\n\nDetected text:\n\n{'x' * 500}...",
+        )
 
     def test_image_directory_auto_created(self) -> None:
         class FakeResponse:

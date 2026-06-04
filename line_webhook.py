@@ -99,7 +99,10 @@ class LineWebhookHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response)))
         self.end_headers()
-        self.wfile.write(response)
+        try:
+            self.wfile.write(response)
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            print("[WARN] Client disconnected before response was fully sent.")
 
 
 def main() -> None:

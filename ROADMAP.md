@@ -32,10 +32,12 @@
 - V1.22.2 LINE Webhook Signature Mismatch Fix
 - V1.23 LINE Image Message Receiver
 - V1.24 LINE Image Download
+- V1.25 LINE OCR Integration
+- V1.25.1 Graceful Webhook Client Disconnect Handling
 
 ## Proposed Milestones
 
-## V1.25 Better Parser Test Dataset
+## V1.26 Better Parser Test Dataset
 
 ### Goal
 
@@ -59,7 +61,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.26 Advanced Monthly Financial Insights
+## V1.27 Advanced Monthly Financial Insights
 
 ### Goal
 

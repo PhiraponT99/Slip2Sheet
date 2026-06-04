@@ -33,6 +33,7 @@ Slip image
 -> LINE text webhook
 -> LINE image message receiver
 -> LINE image download storage
+-> LINE OCR text extraction
 ```
 
 ## Current Capabilities
@@ -67,6 +68,8 @@ Slip image
 - V1.22.2 LINE Webhook Signature Mismatch Fix
 - V1.23 LINE Image Message Receiver
 - V1.24 LINE Image Download
+- V1.25 LINE OCR Integration
+- V1.25.1 Graceful Webhook Client Disconnect Handling
 
 ## Core Modules
 
@@ -111,6 +114,8 @@ Slip image
 - LINE webhook runtime logs should stay limited to startup/config presence unless a task explicitly asks for temporary diagnostics.
 - LINE signature diagnostics must never print raw request bodies, full signatures, channel secrets, or access tokens.
 - LINE image downloads must save under `incoming/line/` unless a task explicitly defines a migration.
+- LINE OCR logs must not print OCR content; log only identifiers, saved file paths, and success/failure status.
+- LINE webhook response writes should handle expected client disconnect errors without printing tracebacks.
 - Keep changes small and incremental.
 - Preserve backward compatibility where possible.
 
