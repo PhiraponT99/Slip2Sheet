@@ -29,6 +29,8 @@ Slip image
 -> Monthly reflection
 -> Reflection report
 -> Reflection Markdown report
+-> Reflection report file export
+-> LINE text webhook
 ```
 
 ## Current Capabilities
@@ -57,6 +59,10 @@ Slip image
 - V1.18 Monthly Reflection Summary
 - V1.19 Reflection Report
 - V1.20 Reflection Report Markdown Export
+- V1.21 Export Reflection Report File
+- V1.22 LINE Bot Skeleton
+- V1.22.1 LINE Webhook Env Loading Fix
+- V1.22.2 LINE Webhook Signature Mismatch Fix
 
 ## Core Modules
 
@@ -79,6 +85,9 @@ Slip image
 - `expense_tracker/monthly_reflection.py`
 - `expense_tracker/reflection_report.py`
 - `expense_tracker/reflection_markdown.py`
+- `expense_tracker/reflection_export.py`
+- `expense_tracker/line_bot.py`
+- `line_webhook.py`
 - `merchant_aliases.json`
 - `merchant_categories.json`
 - `goals.json`
@@ -94,6 +103,8 @@ Slip image
 - Do not connect to bank APIs.
 - Do not store bank credentials.
 - Run `python main.py --precommit-check` before committing.
+- LINE webhook logs may show whether secrets are loaded, but must never print secret or token values.
+- LINE signature diagnostics must never print raw request bodies, full signatures, channel secrets, or access tokens.
 - Keep changes small and incremental.
 - Preserve backward compatibility where possible.
 
@@ -114,6 +125,7 @@ date|time|merchant|amount
 - `.env` must not be committed.
 - Service account JSON must not be committed.
 - Raw private keys must never be pasted into docs.
+- LINE webhook diagnostics may include only body length, boolean credential/header presence, and short signature prefixes.
 - Use `.env.example` for placeholders only.
 - Runtime folders such as `exports/`, `incoming/`, `processed/`, and `failed/` must not be committed.
 

@@ -29,6 +29,8 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Summarize current-month spending reflections.
 - Combine daily, weekly, and monthly reflections into one report.
 - Render the combined reflection report as Markdown.
+- Export the Markdown reflection report to a `.md` file.
+- Provide an initial LINE Bot text webhook skeleton.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -92,6 +94,8 @@ GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
 GOOGLE_SHEET_ID=your_google_sheet_id_here
 DAILY_BUDGET=300
 MONTHLY_BUDGET=9000
+LINE_CHANNEL_SECRET=your_line_channel_secret_here
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
 ```
 
 `.gitignore` excludes `.env` and `*.json`, so service account credentials should stay out of git.
@@ -232,6 +236,12 @@ Show combined reflection report as Markdown:
 
 ```bash
 python main.py --reflection-report-md
+```
+
+Export combined reflection report Markdown to a file:
+
+```bash
+python main.py --export-reflection-report
 ```
 
 Daily report output:
@@ -659,6 +669,78 @@ Message: You stayed within budget on all spending days this month.
 
 Your spending is currently under control.
 ```
+
+Reflection report file export output:
+
+```json
+{
+  "status": "success",
+  "file_path": "reports/reflection-2026-06-04.md"
+}
+```
+
+The export command creates `reports/` automatically and overwrites `reports/reflection-YYYY-MM-DD.md` by default.
+
+## LINE Bot Webhook
+
+V1.22 includes a minimal LINE Bot webhook skeleton for text connectivity only.
+
+Run:
+
+```bash
+python line_webhook.py
+```
+
+Webhook endpoint:
+
+```text
+POST /webhook
+```
+
+Health check:
+
+```text
+GET /health
+```
+
+Configuration:
+
+```text
+LINE_CHANNEL_SECRET=your_line_channel_secret_here
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
+```
+
+Behavior:
+
+- Verifies `X-Line-Signature`.
+- Receives LINE webhook events.
+- Supports text messages only.
+- Replies `Hello from Slip2Sheet` to any text message.
+
+This skeleton does not process images, run OCR, create transactions, or write to Google Sheets.
+
+Troubleshooting `401 Unauthorized` from `/webhook`:
+
+- Confirm `.env` is loaded.
+- Confirm `LINE_CHANNEL_SECRET` is set.
+- Confirm `LINE_CHANNEL_ACCESS_TOKEN` is set.
+- Confirm the Channel Secret is copied from the same LINE Messaging API channel as the webhook URL.
+- Regenerate the Channel Secret if needed, then update `.env`.
+- Restart `python line_webhook.py` after editing `.env`.
+- Confirm the LINE webhook URL ends with `/webhook`.
+- Confirm ngrok points to `localhost:8000`.
+
+The webhook logs only boolean presence checks for LINE config values. It must never print the actual channel secret or access token.
+
+Signature debug logs are safe and include only:
+
+- body length
+- whether `X-Line-Signature` exists
+- whether `LINE_CHANNEL_SECRET` exists
+- first 8 characters of the received signature
+- first 8 characters of the generated signature
+
+The webhook must verify the exact raw request body bytes from LINE. Do not decode, re-encode, strip, parse, or normalize the body before signature verification.
 
 Add or update a merchant alias:
 

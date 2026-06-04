@@ -26,10 +26,14 @@
 - V1.18 Monthly Reflection Summary
 - V1.19 Reflection Report
 - V1.20 Reflection Report Markdown Export
+- V1.21 Export Reflection Report File
+- V1.22 LINE Bot Skeleton
+- V1.22.1 LINE Webhook Env Loading Fix
+- V1.22.2 LINE Webhook Signature Mismatch Fix
 
 ## Proposed Milestones
 
-## V1.21 Better Parser Test Dataset
+## V1.23 Better Parser Test Dataset
 
 ### Goal
 
@@ -53,7 +57,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.22 Advanced Monthly Financial Insights
+## V1.24 Advanced Monthly Financial Insights
 
 ### Goal
 

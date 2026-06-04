@@ -3,6 +3,7 @@ incoming/
 processed/
 failed/
 exports/
+reports/
 
 # Credentials
 credentials/

@@ -384,6 +384,24 @@ class MainCliTest(unittest.TestCase):
         render_markdown.assert_called_once_with(report)
         self.assertEqual(stdout.getvalue().strip(), "# Report")
 
+    def test_export_reflection_report_command(self) -> None:
+        argv = ["main.py", "--export-reflection-report"]
+        output = {
+            "status": "success",
+            "file_path": "reports/reflection-2026-06-04.md",
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.export_reflection_report", return_value=output) as export_reflection_report,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        export_reflection_report.assert_called_once_with()
+        self.assertEqual(json.loads(stdout.getvalue()), output)
+
 
 if __name__ == "__main__":
     unittest.main()

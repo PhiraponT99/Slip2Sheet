@@ -15,6 +15,7 @@ from expense_tracker.monthly_reflection import monthly_reflection_report
 from expense_tracker.ocr import OcrError, run_ocr
 from expense_tracker.parser import extract_transaction
 from expense_tracker.reflection_history import reflection_history_report
+from expense_tracker.reflection_export import export_reflection_report
 from expense_tracker.reflection_markdown import render_reflection_report_markdown
 from expense_tracker.reflection import reflection_report
 from expense_tracker.reflection_report import reflection_report as combined_reflection_report
@@ -143,6 +144,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print combined reflection report as Markdown.",
     )
+    parser.add_argument(
+        "--export-reflection-report",
+        action="store_true",
+        help="Export combined reflection report Markdown to reports/reflection-YYYY-MM-DD.md.",
+    )
     return parser.parse_args()
 
 
@@ -170,13 +176,14 @@ def main() -> int:
             args.monthly_reflection,
             args.reflection_report,
             args.reflection_report_md,
+            args.export_reflection_report,
         )
         if selected
     )
 
     if command_count != 1:
         print(
-            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, --reflection, --reflection-history, --weekly-reflection, --monthly-reflection, --reflection-report, or --reflection-report-md.",
+            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, --reflection, --reflection-history, --weekly-reflection, --monthly-reflection, --reflection-report, --reflection-report-md, or --export-reflection-report.",
             file=sys.stderr,
         )
         return 2
@@ -320,6 +327,9 @@ def main() -> int:
     if args.reflection_report_md:
         print(render_reflection_report_markdown(combined_reflection_report()))
         return 0
+
+    if args.export_reflection_report:
+        return _print_output(export_reflection_report())
 
     image_path = Path(args.image)
 
