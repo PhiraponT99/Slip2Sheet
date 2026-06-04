@@ -4,7 +4,10 @@ from datetime import date
 from typing import Any, Callable
 
 from expense_tracker.goals import goals_report
+from expense_tracker.monthly_reflection import monthly_reflection_report
 from expense_tracker.reflection import calculate_reflection
+from expense_tracker.reflection_history import reflection_history_report
+from expense_tracker.weekly_reflection import weekly_reflection_report
 from expense_tracker.reports import (
     calculate_daily_report,
     calculate_month_report,
@@ -22,6 +25,9 @@ def dashboard_payload(
     today_fn: Callable[[], dict[str, Any]] = today_report,
     month_fn: Callable[[str], dict[str, Any]] = month_report,
     goals_fn: Callable[[], dict[str, Any]] = goals_report,
+    reflection_history_fn: Callable[[], dict[str, Any]] = reflection_history_report,
+    weekly_reflection_fn: Callable[[], dict[str, Any]] = weekly_reflection_report,
+    monthly_reflection_fn: Callable[[], dict[str, Any]] = monthly_reflection_report,
     current_date: date | None = None,
 ) -> dict[str, Any]:
     if current_date is None:
@@ -33,6 +39,18 @@ def dashboard_payload(
     month_data = _load_month_report(month_fn, month_text)
     goals_data = goals_fn()
     reflection_data = calculate_reflection(today_data)
+    try:
+        reflection_history_data = reflection_history_fn()
+    except SheetsError:
+        reflection_history_data = {"summary": {}}
+    try:
+        weekly_reflection_data = weekly_reflection_fn()
+    except SheetsError:
+        weekly_reflection_data = {}
+    try:
+        monthly_reflection_data = monthly_reflection_fn()
+    except SheetsError:
+        monthly_reflection_data = {}
 
     return {
         "today": today_data,
@@ -41,6 +59,9 @@ def dashboard_payload(
         "forecast": month_data.get("forecast", {}),
         "goals": goals_data.get("goals", []),
         "reflection": reflection_data.get("reflection", {}),
+        "reflection_history": reflection_history_data.get("summary", {}),
+        "weekly_reflection": weekly_reflection_data,
+        "monthly_reflection": monthly_reflection_data,
     }
 
 
@@ -51,6 +72,11 @@ def render_dashboard(payload: dict[str, Any]) -> str:
     forecast = payload.get("forecast", month.get("forecast", {}))
     goals = payload.get("goals", [])
     reflection = payload.get("reflection", {})
+    reflection_history = payload.get("reflection_history", {})
+    weekly_reflection = payload.get("weekly_reflection", {})
+    weekly_summary = weekly_reflection.get("summary", {})
+    monthly_reflection = payload.get("monthly_reflection", {})
+    monthly_summary = monthly_reflection.get("summary", {})
     month_status = month.get("budget_health", {}).get(
         "health_status", month.get("budget_status", "OK")
     )
@@ -115,6 +141,58 @@ def render_dashboard(payload: dict[str, Any]) -> str:
         "Reflection",
         _rule("─"),
         str(reflection.get("message", "No spending recorded today.")),
+        "",
+        "Reflection History",
+        _rule("─"),
+        _label_value("OK days:", str(reflection_history.get("ok_days", 0))),
+        _label_value(
+            "Over budget days:",
+            str(reflection_history.get("over_budget_days", 0)),
+        ),
+        _label_value(
+            "No spending days:",
+            str(reflection_history.get("no_spending_days", 0)),
+        ),
+        "",
+        "Weekly Reflection",
+        _rule("─"),
+        _label_value(
+            "Total Expense:",
+            format_money(weekly_reflection.get("total_expense")),
+        ),
+        _label_value(
+            "Spending Days:",
+            str(weekly_reflection.get("total_days_with_transactions", 0)),
+        ),
+        "Budget Performance:",
+        _label_value("OK Days:", str(weekly_summary.get("ok_days", 0))),
+        _label_value(
+            "Over Budget Days:",
+            str(weekly_summary.get("over_budget_days", 0)),
+        ),
+        f"Message: {weekly_reflection.get('message', 'No spending recorded this week.')}",
+        "",
+        "Monthly Reflection",
+        _rule("─"),
+        _label_value(
+            "Total Expense:",
+            format_money(monthly_reflection.get("total_expense")),
+        ),
+        _label_value(
+            "Spending Days:",
+            str(monthly_reflection.get("total_days_with_transactions", 0)),
+        ),
+        "Budget Performance:",
+        _label_value("OK Days:", str(monthly_summary.get("ok_days", 0))),
+        _label_value(
+            "Over Budget Days:",
+            str(monthly_summary.get("over_budget_days", 0)),
+        ),
+        _label_value(
+            "No Spending Days:",
+            str(monthly_summary.get("no_spending_days", 0)),
+        ),
+        f"Message: {monthly_reflection.get('message', 'No spending recorded this month.')}",
         "",
         _rule("═"),
     ]

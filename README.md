@@ -24,6 +24,9 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Analyze spending trends across monthly sheets.
 - Track financial goals and progress.
 - Generate a simple daily spending reflection.
+- Store and summarize daily reflection history for the current month.
+- Summarize current-week spending reflections.
+- Summarize current-month spending reflections.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -197,6 +200,24 @@ Show today's spending reflection:
 
 ```bash
 python main.py --reflection
+```
+
+Show current-month reflection history:
+
+```bash
+python main.py --reflection-history
+```
+
+Show current-week reflection summary:
+
+```bash
+python main.py --weekly-reflection
+```
+
+Show current-month reflection summary:
+
+```bash
+python main.py --monthly-reflection
 ```
 
 Daily report output:
@@ -441,6 +462,102 @@ Reflection messages:
 - Over daily budget: `You exceeded your daily budget today.`
 
 The terminal dashboard includes a Reflection section with the daily message.
+
+Reflection history output:
+
+```json
+{
+  "month": "2026-06",
+  "days_in_month": 30,
+  "records": [
+    {
+      "date": "2026-06-03",
+      "total_expense": 50.0,
+      "transaction_count": 1,
+      "top_category": "food",
+      "top_merchant": "Lotus's",
+      "budget_status": "OK",
+      "message": "You stayed within your daily budget today."
+    }
+  ],
+  "summary": {
+    "ok_days": 1,
+    "over_budget_days": 0,
+    "no_spending_days": 2,
+    "total_days_with_transactions": 1
+  }
+}
+```
+
+The terminal dashboard includes a Reflection History section:
+
+```text
+Reflection History
+──────────────────────────────────────
+OK days:                     1
+Over budget days:            0
+No spending days:            2
+```
+
+Weekly reflection output:
+
+```json
+{
+  "week_start": "2026-06-01",
+  "week_end": "2026-06-07",
+  "total_expense": 250.0,
+  "transaction_count": 5,
+  "top_category": "food",
+  "top_merchant": "Lotus's",
+  "total_days_with_transactions": 5,
+  "spending_day_ratio": 0.71,
+  "summary": {
+    "ok_days": 4,
+    "over_budget_days": 1,
+    "no_spending_days": 2
+  },
+  "message": "You stayed within budget for most spending days this week."
+}
+```
+
+Weekly reflection message rules:
+
+- No transactions: `No spending recorded this week.`
+- No over-budget days and at least one spending day: `You stayed within budget on all spending days this week.`
+- More OK days than over-budget days: `You stayed within budget for most spending days this week.`
+- Over-budget days greater than or equal to OK days: `You exceeded your budget on several spending days this week.`
+
+The terminal dashboard includes a Weekly Reflection section with weekly totals, budget day counts, and the weekly message.
+
+Monthly reflection output:
+
+```json
+{
+  "month": "2026-06",
+  "days_in_month": 30,
+  "total_expense": 1250.0,
+  "transaction_count": 18,
+  "top_category": "food",
+  "top_merchant": "Lotus's",
+  "total_days_with_transactions": 12,
+  "spending_day_ratio": 0.4,
+  "summary": {
+    "ok_days": 10,
+    "over_budget_days": 2,
+    "no_spending_days": 18
+  },
+  "message": "You stayed within budget on most spending days this month."
+}
+```
+
+Monthly reflection message rules:
+
+- No transactions: `No spending recorded this month.`
+- No over-budget days and at least one spending day: `You stayed within budget on all spending days this month.`
+- More OK days than over-budget days: `You stayed within budget on most spending days this month.`
+- Over-budget days greater than or equal to OK days: `You exceeded your budget on several spending days this month.`
+
+The terminal dashboard includes a Monthly Reflection section with monthly totals, spending day counts, budget performance, and the monthly message.
 
 Add or update a merchant alias:
 

@@ -20,10 +20,14 @@
 - V1.13 Spending Trend Analysis
 - V1.14 Financial Goal Tracking
 - V1.15 Daily Reflection
+- V1.16 Reflection History
+- V1.17 Weekly Reflection Summary
+- V1.17.1 Weekly Reflection Message Refinement
+- V1.18 Monthly Reflection Summary
 
 ## Proposed Milestones
 
-## V1.16 Better Parser Test Dataset
+## V1.19 Better Parser Test Dataset
 
 ### Goal
 
@@ -47,7 +51,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.17 Advanced Monthly Financial Insights
+## V1.20 Advanced Monthly Financial Insights
 
 ### Goal
 

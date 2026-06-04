@@ -255,6 +255,91 @@ class MainCliTest(unittest.TestCase):
         reflection_report.assert_called_once_with()
         self.assertEqual(json.loads(stdout.getvalue()), output)
 
+    def test_reflection_history_command(self) -> None:
+        argv = ["main.py", "--reflection-history"]
+        output = {
+            "month": "2026-06",
+            "days_in_month": 30,
+            "records": [],
+            "summary": {
+                "ok_days": 0,
+                "over_budget_days": 0,
+                "no_spending_days": 0,
+                "total_days_with_transactions": 0,
+            },
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.reflection_history_report", return_value=output) as reflection_history_report,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        reflection_history_report.assert_called_once_with()
+        self.assertEqual(json.loads(stdout.getvalue()), output)
+
+    def test_weekly_reflection_command(self) -> None:
+        argv = ["main.py", "--weekly-reflection"]
+        output = {
+            "week_start": "2026-06-01",
+            "week_end": "2026-06-07",
+            "total_expense": 250.0,
+            "transaction_count": 5,
+            "top_category": "food",
+            "top_merchant": "Lotus's",
+            "total_days_with_transactions": 5,
+            "spending_day_ratio": 0.71,
+            "summary": {
+                "ok_days": 4,
+                "over_budget_days": 1,
+                "no_spending_days": 2,
+            },
+            "message": "You stayed within budget for most spending days this week.",
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.weekly_reflection_report", return_value=output) as weekly_reflection_report,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        weekly_reflection_report.assert_called_once_with()
+        self.assertEqual(json.loads(stdout.getvalue()), output)
+
+    def test_monthly_reflection_command(self) -> None:
+        argv = ["main.py", "--monthly-reflection"]
+        output = {
+            "month": "2026-06",
+            "days_in_month": 30,
+            "total_expense": 1250.0,
+            "transaction_count": 18,
+            "top_category": "food",
+            "top_merchant": "Lotus's",
+            "total_days_with_transactions": 12,
+            "spending_day_ratio": 0.4,
+            "summary": {
+                "ok_days": 10,
+                "over_budget_days": 2,
+                "no_spending_days": 18,
+            },
+            "message": "You stayed within budget on most spending days this month.",
+        }
+
+        with (
+            patch.object(sys, "argv", argv),
+            patch("main.monthly_reflection_report", return_value=output) as monthly_reflection_report,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            exit_code = main.main()
+
+        self.assertEqual(exit_code, 0)
+        monthly_reflection_report.assert_called_once_with()
+        self.assertEqual(json.loads(stdout.getvalue()), output)
+
 
 if __name__ == "__main__":
     unittest.main()

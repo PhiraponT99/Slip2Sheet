@@ -11,14 +11,17 @@ from expense_tracker.goals import add_goal, goals_report, update_goal
 from expense_tracker.maintenance import backfill_transaction_keys, dedupe_transactions
 from expense_tracker.merchant_categories import add_category
 from expense_tracker.merchant_aliases import add_alias
+from expense_tracker.monthly_reflection import monthly_reflection_report
 from expense_tracker.ocr import OcrError, run_ocr
 from expense_tracker.parser import extract_transaction
+from expense_tracker.reflection_history import reflection_history_report
 from expense_tracker.reflection import reflection_report
 from expense_tracker.reports import month_report, today_report
 from expense_tracker.safety import run_precommit_check
 from expense_tracker.sheets import SheetsError, append_transaction_to_sheet
 from expense_tracker.summary import update_summary_sheet
 from expense_tracker.trends import trend_report
+from expense_tracker.weekly_reflection import weekly_reflection_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,6 +116,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print today's spending reflection.",
     )
+    parser.add_argument(
+        "--reflection-history",
+        action="store_true",
+        help="Print current-month daily reflection history.",
+    )
+    parser.add_argument(
+        "--weekly-reflection",
+        action="store_true",
+        help="Print current-week spending reflection summary.",
+    )
+    parser.add_argument(
+        "--monthly-reflection",
+        action="store_true",
+        help="Print current-month spending reflection summary.",
+    )
     return parser.parse_args()
 
 
@@ -135,13 +153,16 @@ def main() -> int:
             bool(args.goal_add),
             bool(args.goal_update),
             args.reflection,
+            args.reflection_history,
+            args.weekly_reflection,
+            args.monthly_reflection,
         )
         if selected
     )
 
     if command_count != 1:
         print(
-            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, or --reflection.",
+            "Use exactly one command: --image, --today, --month, --backfill-keys, --dedupe, --add-alias, --add-category, --precommit-check, --dashboard, --trend, --goals, --goal-add, --goal-update, --reflection, --reflection-history, --weekly-reflection, or --monthly-reflection.",
             file=sys.stderr,
         )
         return 2
@@ -269,6 +290,15 @@ def main() -> int:
         except SheetsError as exc:
             print(f"Reflection failed: {exc}", file=sys.stderr)
             return 1
+
+    if args.reflection_history:
+        return _print_output(reflection_history_report())
+
+    if args.weekly_reflection:
+        return _print_output(weekly_reflection_report())
+
+    if args.monthly_reflection:
+        return _print_output(monthly_reflection_report())
 
     image_path = Path(args.image)
 

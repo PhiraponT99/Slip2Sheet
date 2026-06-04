@@ -86,6 +86,36 @@ class DashboardTest(unittest.TestCase):
                     }
                 ]
             },
+            reflection_history_fn=lambda: {
+                "summary": {
+                    "ok_days": 2,
+                    "over_budget_days": 1,
+                    "no_spending_days": 1,
+                    "total_days_with_transactions": 3,
+                }
+            },
+            weekly_reflection_fn=lambda: {
+                "total_expense": 250.0,
+                "total_days_with_transactions": 5,
+                "spending_day_ratio": 0.71,
+                "summary": {
+                    "ok_days": 4,
+                    "over_budget_days": 1,
+                    "no_spending_days": 2,
+                },
+                "message": "You stayed within budget for most spending days this week.",
+            },
+            monthly_reflection_fn=lambda: {
+                "total_expense": 1250.0,
+                "total_days_with_transactions": 12,
+                "spending_day_ratio": 0.4,
+                "summary": {
+                    "ok_days": 10,
+                    "over_budget_days": 2,
+                    "no_spending_days": 18,
+                },
+                "message": "You stayed within budget on most spending days this month.",
+            },
             current_date=date(2026, 6, 4),
         )
 
@@ -99,6 +129,7 @@ class DashboardTest(unittest.TestCase):
             payload["reflection"]["message"],
             "You stayed within your daily budget today.",
         )
+        self.assertEqual(payload["reflection_history"]["ok_days"], 2)
         self.assertIn("Slip2Sheet Dashboard", rendered)
         self.assertIn("Spent:", rendered)
         self.assertIn("50.00 THB", rendered)
@@ -111,12 +142,25 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("20.0%", rendered)
         self.assertIn("Reflection", rendered)
         self.assertIn("You stayed within your daily budget today.", rendered)
+        self.assertIn("Reflection History", rendered)
+        self.assertIn("OK days:", rendered)
+        self.assertIn("Weekly Reflection", rendered)
+        self.assertIn("250.00 THB", rendered)
+        self.assertIn("Spending Days:", rendered)
+        self.assertIn("Budget Performance:", rendered)
+        self.assertIn("You stayed within budget for most spending days this week.", rendered)
+        self.assertIn("Monthly Reflection", rendered)
+        self.assertIn("1250.00 THB", rendered)
+        self.assertIn("You stayed within budget on most spending days this month.", rendered)
 
     def test_dashboard_without_data(self) -> None:
         payload = dashboard_payload(
             today_fn=lambda: (_ for _ in ()).throw(SheetsError("sheet not found")),
             month_fn=lambda month: (_ for _ in ()).throw(SheetsError("sheet not found")),
             goals_fn=lambda: {"goals": []},
+            reflection_history_fn=lambda: {"summary": {}},
+            weekly_reflection_fn=lambda: {},
+            monthly_reflection_fn=lambda: {},
             current_date=date(2026, 6, 4),
         )
 
@@ -135,12 +179,26 @@ class DashboardTest(unittest.TestCase):
         payload = dashboard_payload(
             today_fn=lambda: TODAY_REPORT,
             month_fn=lambda month: MONTH_REPORT,
+            goals_fn=lambda: {"goals": []},
+            reflection_history_fn=lambda: {"summary": {}},
+            weekly_reflection_fn=lambda: {},
+            monthly_reflection_fn=lambda: {},
             current_date=date(2026, 6, 4),
         )
 
         self.assertEqual(
             set(payload),
-            {"today", "month", "insights", "forecast", "goals", "reflection"},
+            {
+                "today",
+                "month",
+                "insights",
+                "forecast",
+                "goals",
+                "reflection",
+                "reflection_history",
+                "weekly_reflection",
+                "monthly_reflection",
+            },
         )
         self.assertEqual(payload["insights"]["top_category"], "food")
         self.assertEqual(payload["forecast"]["projected_monthly_spend"], 375.0)

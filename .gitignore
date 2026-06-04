@@ -12,3 +12,4 @@ credentials/
 .venv/
 __pycache__/
 *.pyc
+goals.json

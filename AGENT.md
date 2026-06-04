@@ -24,6 +24,9 @@ Slip image
 -> Trend analysis
 -> Financial goals
 -> Daily reflection
+-> Reflection history
+-> Weekly reflection
+-> Monthly reflection
 ```
 
 ## Current Capabilities
@@ -46,6 +49,10 @@ Slip image
 - V1.13 Spending Trend Analysis
 - V1.14 Financial Goal Tracking
 - V1.15 Daily Reflection
+- V1.16 Reflection History
+- V1.17 Weekly Reflection Summary
+- V1.17.1 Weekly Reflection Message Refinement
+- V1.18 Monthly Reflection Summary
 
 ## Core Modules
 
@@ -63,6 +70,9 @@ Slip image
 - `expense_tracker/trends.py`
 - `expense_tracker/goals.py`
 - `expense_tracker/reflection.py`
+- `expense_tracker/reflection_history.py`
+- `expense_tracker/weekly_reflection.py`
+- `expense_tracker/monthly_reflection.py`
 - `merchant_aliases.json`
 - `merchant_categories.json`
 - `goals.json`
