@@ -13,14 +13,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from expense_tracker.line_bot import (
+    DATE_PARSE_FAILURE_TEXT,
     DEFAULT_REPLY_TEXT,
     IMAGE_DOWNLOAD_FAILURE_TEXT,
-    LINE_SHEET_COLUMNS,
     LineBotError,
     OCR_FAILURE_TEXT,
     PARSE_FAILURE_TEXT,
     PROCESSED_LINE_EVENT_KEYS,
-    append_line_transaction_to_sheet,
     SAVE_FAILURE_TEXT,
     build_daily_summary_reply_text,
     build_duplicate_reply_text,
@@ -33,7 +32,6 @@ from expense_tracker.line_bot import (
     handle_line_webhook,
     is_daily_summary_command,
     line_event_key,
-    read_line_daily_summary,
     save_line_transaction,
     send_line_reply,
     signature_diagnostics,
@@ -114,59 +112,6 @@ def text_body(text: str) -> bytes:
         },
         ensure_ascii=False,
     ).encode("utf-8")
-
-
-class FakeLineSheetsService:
-    def __init__(self, rows: list[list[object]] | None = None, sheets: list[str] | None = None):
-        self.rows = rows or []
-        self.sheets = sheets or []
-        self.appended_values: list[list[object]] = []
-        self.updated_values: list[list[object]] = []
-        self.batch_updates: list[dict[str, object]] = []
-
-    def spreadsheets(self):
-        return self
-
-    def values(self):
-        return self
-
-    def get(self, **kwargs):
-        if "range" in kwargs:
-            self._pending_result = {"values": self.rows}
-        else:
-            self._pending_result = {
-                "sheets": [
-                    {"properties": {"title": title}}
-                    for title in self.sheets
-                ]
-            }
-        return self
-
-    def batchUpdate(self, **kwargs):
-        self.batch_updates.append(kwargs.get("body", {}))
-        for request in kwargs.get("body", {}).get("requests", []):
-            title = request.get("addSheet", {}).get("properties", {}).get("title")
-            if title and title not in self.sheets:
-                self.sheets.append(title)
-        self._pending_result = {}
-        return self
-
-    def update(self, **kwargs):
-        values = kwargs.get("body", {}).get("values", [])
-        self.updated_values.extend(values)
-        self.rows = values
-        self._pending_result = {}
-        return self
-
-    def append(self, **kwargs):
-        values = kwargs.get("body", {}).get("values", [])
-        self.appended_values.extend(values)
-        self.rows.extend(values)
-        self._pending_result = {}
-        return self
-
-    def execute(self):
-        return getattr(self, "_pending_result", {})
 
 
 class LineBotTest(unittest.TestCase):
@@ -268,6 +213,7 @@ class LineBotTest(unittest.TestCase):
             "date": "2026-06-05",
             "transaction_count": 2,
             "total_expense": 125.5,
+            "remaining_budget": 9737.9,
             "transactions": [
                 {
                     "time": "12:26",
@@ -293,9 +239,10 @@ class LineBotTest(unittest.TestCase):
 
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
         self.assertEqual(replies, [build_daily_summary_reply_text(summary)])
-        self.assertIn("Total: 125.50 THB", replies[0])
-        self.assertIn("Transactions: 2", replies[0])
-        self.assertIn("1. 12:26 Lotus's 58.00 THB", replies[0])
+        self.assertIn("วันนี้ใช้เงิน:", replies[0])
+        self.assertIn("- Lotus's 58 บาท", replies[0])
+        self.assertIn("รวม 125.50 บาท", replies[0])
+        self.assertNotIn("ยอดเงินคงเหลือ", replies[0])
 
     def test_thai_daily_summary_command_reply(self) -> None:
         body = text_body("สรุปวันนี้")
@@ -322,7 +269,7 @@ class LineBotTest(unittest.TestCase):
         )
 
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
-        self.assertIn("Daily Summary", replies[0])
+        self.assertIn("วันนี้ใช้เงิน:", replies[0])
         self.assertTrue(is_daily_summary_command(" สรุปวันนี้ "))
 
     def test_daily_summary_no_spending_reply(self) -> None:
@@ -339,12 +286,85 @@ class LineBotTest(unittest.TestCase):
             reply,
             "\n".join(
                 [
-                    "\U0001f4ca Daily Summary",
+                    "วันนี้ใช้เงิน:",
                     "",
-                    "No spending recorded today.",
+                    "ไม่มีรายการใช้เงินวันนี้",
                 ]
             ),
         )
+
+    def test_daily_summary_count_uses_filtered_transaction_list(self) -> None:
+        reply = build_daily_summary_reply_text(
+            {
+                "date": "2026-06-05",
+                "total_expense": 100.0,
+                "transactions": [
+                    {"time": "10:00", "merchant": "A", "amount": 10.0},
+                    {"time": "11:00", "merchant": "B", "amount": 20.0},
+                    {"time": "12:00", "merchant": "C", "amount": 70.0},
+                ],
+            }
+        )
+
+        self.assertNotIn("Transactions:", reply)
+        self.assertIn("- A 10 บาท", reply)
+        self.assertIn("- C 70 บาท", reply)
+        self.assertIn("รวม 100 บาท", reply)
+
+    def test_daily_summary_prefers_note_over_merchant_for_item_label(self) -> None:
+        reply = build_daily_summary_reply_text(
+            {
+                "date": "2026-06-05",
+                "total_expense": 183.0,
+                "remaining_budget": 9737.9,
+                "transactions": [
+                    {"note": "ชา", "merchant": "ร้านน้ำ", "amount": 15.0},
+                    {"note": "มื้อเที่ยง", "merchant": "เหมียวแซ่บ", "amount": 16.0},
+                    {"merchant": "ขนมเบื้อง", "amount": 24.0},
+                ],
+            }
+        )
+
+        self.assertEqual(
+            reply,
+            "\n".join(
+                [
+                    "วันนี้ใช้เงิน:",
+                    "- ชา 15 บาท",
+                    "- มื้อเที่ยง 16 บาท",
+                    "- ขนมเบื้อง 24 บาท",
+                    "",
+                    "รวม 183 บาท",
+                ]
+            ),
+        )
+
+    def test_daily_summary_skips_discount_payment_lines_as_labels(self) -> None:
+        reply = build_daily_summary_reply_text(
+            {
+                "date": "2026-06-05",
+                "total_expense": 40.0,
+                "transactions": [
+                    {
+                        "note": "สิทธิไทยช่วยไทยพลัส -36 บาท",
+                        "merchant": "ขนมเบื้อง",
+                        "category": "food",
+                        "amount": 24.0,
+                    },
+                    {
+                        "note": "จำนวนเงินที่ชำระ 16 บาท",
+                        "merchant": "มื้อเที่ยง",
+                        "category": "food",
+                        "amount": 16.0,
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("- ขนมเบื้อง 24 บาท", reply)
+        self.assertIn("- มื้อเที่ยง 16 บาท", reply)
+        self.assertNotIn("สิทธิไทยช่วยไทยพลัส", reply)
+        self.assertNotIn("จำนวนเงินที่ชำระ", reply)
 
     def test_duplicate_reply_token_is_skipped_in_same_webhook(self) -> None:
         body = json.dumps(
@@ -596,7 +616,6 @@ class LineBotTest(unittest.TestCase):
         summary_data = {
             "date": "2026-06-05",
             "total_expense": 58.0,
-            "transaction_count": 1,
             "transactions": [
                 {
                     "time": "12:26",
@@ -607,7 +626,7 @@ class LineBotTest(unittest.TestCase):
         }
 
         with (
-            patch("expense_tracker.line_bot.read_line_daily_summary", return_value=summary_data),
+            patch("expense_tracker.line_bot.today_report", return_value=summary_data),
             patch("builtins.print") as print_mock,
         ):
             summary = __import__(
@@ -615,7 +634,7 @@ class LineBotTest(unittest.TestCase):
                 fromlist=["line_daily_summary"],
             ).line_daily_summary()
 
-        self.assertEqual(summary["transaction_count"], 1)
+        self.assertEqual(len(summary["transactions"]), 1)
         self.assertEqual(summary["total_expense"], 58.0)
         logged = "\n".join(" ".join(str(part) for part in call.args) for call in print_mock.call_args_list)
         self.assertIn("LINE daily summary query", logged)
@@ -624,35 +643,7 @@ class LineBotTest(unittest.TestCase):
         self.assertIn("result_count=1", logged)
         self.assertIn("total=58.0", logged)
 
-    def test_read_line_daily_summary_from_sheet_rows(self) -> None:
-        rows = [
-            LINE_SHEET_COLUMNS,
-            ["2026-06-05", "12:26", 58, "Lotus's", "food", "line", "2026-06-05T12:27:00"],
-            ["2026-06-04", "14:19", 50, "Other", "other", "line", "2026-06-04T14:20:00"],
-        ]
-
-        with (
-            patch.dict(
-                os.environ,
-                {
-                    "SPREADSHEET_ID": "spreadsheet-id",
-                    "GOOGLE_APPLICATION_CREDENTIALS": "credentials.json",
-                },
-                clear=False,
-            ),
-            patch("pathlib.Path.exists", return_value=True),
-            patch("expense_tracker.line_bot._build_sheets_service", return_value=FakeLineSheetsService(rows=rows)),
-            patch("builtins.print"),
-        ):
-            summary = read_line_daily_summary("2026-06-05")
-
-        self.assertEqual(summary["transaction_count"], 1)
-        self.assertEqual(summary["total_expense"], 58.0)
-        self.assertEqual(summary["transactions"][0]["merchant"], "Lotus's")
-        self.assertEqual(summary["transactions"][0]["source"], "line")
-
-    def test_append_line_transaction_to_sheet_creates_tab_header_and_row(self) -> None:
-        service = FakeLineSheetsService(rows=[], sheets=[])
+    def test_save_line_transaction_uses_existing_sheet_append(self) -> None:
         transaction = TransactionResult(
             date="2026-06-05",
             time="12:26",
@@ -670,23 +661,25 @@ class LineBotTest(unittest.TestCase):
                 },
                 clear=False,
             ),
-            patch("pathlib.Path.exists", return_value=True),
-            patch("expense_tracker.line_bot._build_sheets_service", return_value=service),
+            patch("expense_tracker.line_bot.append_transaction_to_sheet") as append_mock,
         ):
-            result = append_line_transaction_to_sheet(transaction, "food")
+            append_mock.return_value = {
+                "saved": True,
+                "duplicate": False,
+                "sheet_tab": "2026-06",
+            }
+            result = save_line_transaction(
+                transaction,
+                Path("incoming") / "line" / "line_image-id.jpg",
+                "food",
+            )
 
         self.assertEqual(result["saved"], True)
         self.assertEqual(result["sheet_tab"], "2026-06")
-        self.assertIn("2026-06", service.sheets)
-        self.assertEqual(service.updated_values, [LINE_SHEET_COLUMNS])
-        self.assertEqual(service.appended_values[0][:6], [
-            "2026-06-05",
-            "12:26",
-            58.0,
-            "Lotus's",
-            "food",
-            "line",
-        ])
+        append_mock.assert_called_once_with(
+            transaction,
+            Path("incoming") / "line" / "line_image-id.jpg",
+        )
 
     def test_ocr_text_parse_success(self) -> None:
         body = image_body()
@@ -809,6 +802,36 @@ class LineBotTest(unittest.TestCase):
             self.assertFalse(store_path.exists())
             self.assertEqual(replies, [SAVE_FAILURE_TEXT])
 
+    def test_missing_parsed_date_returns_clear_error_without_save(self) -> None:
+        body = image_body()
+        replies = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        save_calls = []
+        transaction = TransactionResult(
+            date=None,
+            time="11:47",
+            merchant="เหมียวแซ่บ",
+            amount=16.0,
+            raw_text="5 bad-month 2569 11:47 น.",
+        )
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(text),
+            image_download_fn=lambda message_id, token: saved_path,
+            ocr_fn=lambda image_path: transaction.raw_text,
+            parse_fn=lambda ocr_text: transaction,
+            save_transaction_fn=lambda transaction, source: save_calls.append(transaction),
+            duplicate_store_path=None,
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(replies, [DATE_PARSE_FAILURE_TEXT])
+        self.assertEqual(save_calls, [])
+
     def test_line_image_flow_returns_transaction_summary(self) -> None:
         body = image_body()
         replies = []
@@ -927,7 +950,7 @@ class LineBotTest(unittest.TestCase):
             )
 
             self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
-            self.assertTrue(store_path.exists())
+            self.assertFalse(store_path.exists())
             self.assertIn("💸 Transaction Saved", replies[0])
 
     def test_repeated_line_slip_is_detected_as_duplicate(self) -> None:
@@ -944,6 +967,18 @@ class LineBotTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             store_path = Path(temp_dir) / "processed" / "line_duplicates.json"
+            save_results = [
+                {
+                    "saved": True,
+                    "duplicate": False,
+                    "sheet_tab": "2026-06",
+                },
+                {
+                    "saved": False,
+                    "duplicate": True,
+                    "sheet_tab": "2026-06",
+                },
+            ]
             for index in range(2):
                 body = image_body(
                     message_id=f"image-id-{index}",
@@ -958,13 +993,11 @@ class LineBotTest(unittest.TestCase):
                     image_download_fn=lambda message_id, token: saved_path,
                     ocr_fn=lambda image_path: "amount 58",
                     parse_fn=lambda ocr_text: transaction,
-                    save_transaction_fn=lambda transaction, source: {
-                        "saved": True,
-                        "duplicate": False,
-                        "sheet_tab": "2026-06",
-                    },
+                    save_transaction_fn=lambda transaction, source: save_results.pop(0),
                     duplicate_store_path=store_path,
                 )
+
+            self.assertFalse(store_path.exists())
 
         self.assertEqual(
             replies[-1],

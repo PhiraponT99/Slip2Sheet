@@ -34,6 +34,13 @@ THAI_MONTHS = {
     "พฤศจิกายน": 11,
     "ธ.ค.": 12,
     "ธันวาคม": 12,
+    "uw.": 6,
+    "uw": 6,
+}
+
+OCR_THAI_MONTH_ALIASES = {
+    "uw.": "มิ.ย.",
+    "uw": "มิ.ย.",
 }
 
 MERCHANT_KEYWORDS = (
@@ -247,36 +254,73 @@ def extract_transaction(raw_text: str | None) -> TransactionResult:
 
 
 def _extract_date(text: str) -> str | None:
-    iso_match = re.search(r"\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b", text)
+    normalized_text = _normalize_date_text(text)
+    iso_match = re.search(r"\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b", normalized_text)
     if iso_match:
-        return _format_date(
+        parsed_date = _format_date(
             int(iso_match.group(1)),
             int(iso_match.group(2)),
             int(iso_match.group(3)),
         )
+        _log_date_parse(iso_match.group(0), iso_match.group(0), parsed_date)
+        return parsed_date
 
-    dmy_match = re.search(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b", text)
+    dmy_match = re.search(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b", normalized_text)
     if dmy_match:
-        return _format_date(
+        parsed_date = _format_date(
             _normalize_year(int(dmy_match.group(3))),
             int(dmy_match.group(2)),
             int(dmy_match.group(1)),
         )
+        _log_date_parse(dmy_match.group(0), dmy_match.group(0), parsed_date)
+        return parsed_date
 
     month_names = "|".join(re.escape(month) for month in THAI_MONTHS)
-    thai_match = re.search(
-        rf"\b(\d{{1,2}})\s*({month_names})\s*(\d{{2,4}})\b",
-        text,
-        re.IGNORECASE,
-    )
-    if thai_match:
-        return _format_date(
-            _normalize_year(int(thai_match.group(3))),
-            THAI_MONTHS[thai_match.group(2)],
-            int(thai_match.group(1)),
+    for raw_line in text.splitlines():
+        normalized_line = _normalize_date_text(raw_line)
+        thai_match = re.search(
+            rf"(?<!\w)(\d{{1,2}})\s*({month_names})\s*(\d{{2,4}})(?!\w)",
+            normalized_line,
+            re.IGNORECASE,
         )
+        if thai_match:
+            parsed_date = _format_date(
+                _normalize_year(int(thai_match.group(3))),
+                THAI_MONTHS[thai_match.group(2).lower()],
+                int(thai_match.group(1)),
+            )
+            _log_date_parse(raw_line.strip(), normalized_line.strip(), parsed_date)
+            return parsed_date
 
     return None
+
+
+def _normalize_date_text(text: str) -> str:
+    normalized = text.translate(THAI_DIGITS)
+    for alias, month_name in OCR_THAI_MONTH_ALIASES.items():
+        normalized = re.sub(
+            rf"(?<!\w){re.escape(alias)}(?!\w)",
+            month_name,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return normalized
+
+
+def _log_date_parse(raw_line: str, normalized_line: str, parsed_date: str | None) -> None:
+    print(
+        "[INFO] Parser date parse",
+        f"raw_date_line={_safe_log_text(raw_line)}",
+        f"normalized_date_line={_safe_log_text(normalized_line)}",
+        f"parsed_date={parsed_date}",
+        flush=True,
+    )
+
+
+def _safe_log_text(value: str | None) -> str:
+    if value is None:
+        return "-"
+    return str(value).encode("ascii", errors="backslashreplace").decode("ascii")
 
 
 def _extract_time(text: str) -> str | None:

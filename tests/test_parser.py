@@ -7,6 +7,22 @@ from expense_tracker.parser import extract_transaction
 
 
 class ParserTest(unittest.TestCase):
+    def test_ocr_thai_month_alias_uw_parses_june_buddhist_year(self) -> None:
+        raw_text = "\n".join(
+            [
+                "จ่ายเงินสำเร็จ",
+                "5 UW. 2569 11:47 น.",
+                "ไปยัง เหมียวแซ่บ",
+                "จำนวนเงิน 16.00",
+            ]
+        )
+
+        result = extract_transaction(raw_text)
+
+        self.assertEqual(result.date, "2026-06-05")
+        self.assertEqual(result.time, "11:47")
+        self.assertEqual(result.amount, 16.0)
+
     def test_real_thai_slip_amounts_and_merchant(self) -> None:
         raw_text = "\n".join(
             [

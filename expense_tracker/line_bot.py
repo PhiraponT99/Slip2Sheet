@@ -5,22 +5,22 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
 from expense_tracker.ocr import run_ocr
 from expense_tracker.parser import extract_transaction
 from expense_tracker.parser_diagnostics import log_parser_investigation
+from expense_tracker.reports import today_report
 from expense_tracker.sheets import (
     SheetsError,
-    _build_sheets_service,
-    _quote_sheet_name,
+    append_transaction_to_sheet,
     infer_category,
     load_dotenv,
-    monthly_tab_name,
 )
 
 
@@ -34,9 +34,9 @@ IMAGE_DOWNLOAD_FAILURE_TEXT = "Failed to download image."
 OCR_FAILURE_TEXT = "OCR failed."
 PARSE_FAILURE_TEXT = "OCR completed, but transaction parsing failed."
 SAVE_FAILURE_TEXT = "Transaction detected, but save failed."
+DATE_PARSE_FAILURE_TEXT = "Transaction detected, but date could not be parsed."
 DEFAULT_LINE_IMAGE_DIR = Path("incoming") / "line"
 DEFAULT_LINE_DUPLICATES_PATH = Path("processed") / "line_duplicates.json"
-LINE_SHEET_COLUMNS = ["Date", "Time", "Amount", "Merchant", "Category", "Source", "CreatedAt"]
 PROCESSED_LINE_EVENT_KEYS: set[str] = set()
 
 
@@ -247,30 +247,25 @@ def _build_image_event_reply_messages(
                     raise LineBotError("Transaction parsing failed.")
                 category = infer_category(transaction.merchant, ocr_text)
                 _log_parsed_transaction(transaction, category)
-                if is_duplicate_line_transaction(
+                if not _has_parsed_date(transaction):
+                    reply_text = DATE_PARSE_FAILURE_TEXT
+                    return [build_text_message(reply_text)]
+                save_result = save_line_transaction(
                     transaction,
-                    duplicate_store_path,
-                ):
+                    saved_file,
+                    category,
+                    save_transaction_fn,
+                )
+                if save_result.get("duplicate"):
                     reply_text = build_duplicate_reply_text(transaction)
-                else:
-                    save_result = save_line_transaction(
+                elif save_result.get("saved"):
+                    reply_text = build_transaction_reply_text(
                         transaction,
-                        saved_file,
                         category,
-                        save_transaction_fn,
+                        title="Transaction Saved",
                     )
-                    if save_result.get("duplicate"):
-                        record_line_transaction(transaction, duplicate_store_path)
-                        reply_text = build_duplicate_reply_text(transaction)
-                    elif save_result.get("saved"):
-                        record_line_transaction(transaction, duplicate_store_path)
-                        reply_text = build_transaction_reply_text(
-                            transaction,
-                            category,
-                            title="Transaction Saved",
-                        )
-                    else:
-                        reply_text = SAVE_FAILURE_TEXT
+                else:
+                    reply_text = SAVE_FAILURE_TEXT
             except Exception as exc:
                 print("[ERROR] LINE transaction parse failed:", str(exc))
                 reply_text = PARSE_FAILURE_TEXT
@@ -447,10 +442,8 @@ def save_line_transaction(
     )
     try:
         if save_transaction_fn is None:
-            result = append_line_transaction_to_sheet(
-                transaction,
-                category,
-            )
+            _ensure_google_sheet_env_alias()
+            result = append_transaction_to_sheet(transaction, source)
         else:
             result = save_transaction_fn(transaction, source)
     except Exception as exc:
@@ -477,11 +470,11 @@ def save_line_transaction(
 def _log_parsed_transaction(transaction: Any, category: str | None) -> None:
     print(
         "[INFO] LINE transaction parsed",
-        f"date={_format_line_value(getattr(transaction, 'date', None))}",
-        f"time={_format_line_value(getattr(transaction, 'time', None))}",
-        f"amount={_format_line_value(getattr(transaction, 'amount', None))}",
-        f"merchant={_format_line_value(getattr(transaction, 'merchant', None))}",
-        f"category={_format_line_value(category)}",
+        f"date={_safe_log_text(_format_line_value(getattr(transaction, 'date', None)))}",
+        f"time={_safe_log_text(_format_line_value(getattr(transaction, 'time', None)))}",
+        f"amount={_safe_log_text(_format_line_value(getattr(transaction, 'amount', None)))}",
+        f"merchant={_safe_log_text(_format_line_value(getattr(transaction, 'merchant', None)))}",
+        f"category={_safe_log_text(_format_line_value(category))}",
         flush=True,
     )
 
@@ -495,84 +488,9 @@ def line_daily_summary() -> dict[str, Any]:
         f"sheet_tab={tab_name}",
         flush=True,
     )
-    summary = read_line_daily_summary(query_date)
-    print(
-        "[INFO] LINE daily summary result",
-        f"sheet_tab={tab_name}",
-        f"result_count={summary.get('transaction_count')}",
-        f"total={summary.get('total_expense')}",
-        flush=True,
-    )
-    return summary
-
-
-def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
-    transaction_count = _number_value(summary.get("transaction_count"))
-    total_expense = _number_value(summary.get("total_expense"))
-
-    if transaction_count == 0 and total_expense == 0:
-        return "\n".join(
-            [
-                "\U0001f4ca Daily Summary",
-                "",
-                "No spending recorded today.",
-            ]
-        )
-
-    lines = [
-        "\U0001f4ca Daily Summary",
-        "",
-        f"Date: {_format_line_value(summary.get('date'))}",
-        f"Total: {_format_money_value(summary.get('total_expense'))}",
-        f"Transactions: {int(transaction_count)}",
-        "",
-    ]
-    for index, transaction in enumerate(summary.get("transactions", []), start=1):
-        lines.append(
-            f"{index}. "
-            f"{_format_line_value(transaction.get('time'))} "
-            f"{_format_line_value(transaction.get('merchant'))} "
-            f"{_format_money_value(transaction.get('amount'))}"
-        )
-    return "\n".join(lines)
-
-
-def is_daily_summary_command(text: str | None) -> bool:
-    return str(text or "").strip().lower() in DAILY_SUMMARY_COMMANDS
-
-
-def append_line_transaction_to_sheet(
-    transaction: Any,
-    category: str | None,
-) -> dict[str, Any]:
-    sheet_id = _line_spreadsheet_id(required=True)
-    credentials_path = _google_credentials_path()
-    service = _build_sheets_service(credentials_path)
-    tab_name = monthly_tab_name(transaction.date)
-    _ensure_line_monthly_tab(service, sheet_id, tab_name)
-
-    service.spreadsheets().values().append(
-        spreadsheetId=sheet_id,
-        range=f"{_quote_sheet_name(tab_name)}!A:G",
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body={"values": [_build_line_sheet_row(transaction, category)]},
-    ).execute()
-
-    return {
-        "saved": True,
-        "duplicate": False,
-        "sheet_tab": tab_name,
-    }
-
-
-def read_line_daily_summary(query_date: str) -> dict[str, Any]:
-    tab_name = query_date[:7]
     try:
-        sheet_id = _line_spreadsheet_id(required=True)
-        credentials_path = _google_credentials_path()
-        service = _build_sheets_service(credentials_path)
-        rows = _read_line_sheet_rows(service, sheet_id, tab_name)
+        _ensure_google_sheet_env_alias()
+        summary = today_report()
     except Exception as exc:
         print(
             "[WARN] LINE daily summary read returned empty result",
@@ -580,114 +498,98 @@ def read_line_daily_summary(query_date: str) -> dict[str, Any]:
             f"error={exc}",
             flush=True,
         )
-        rows = []
-
-    transactions = _line_transactions_for_date(rows, query_date)
-    total = round(sum(_number_value(row.get("amount")) for row in transactions), 2)
-    return {
-        "date": query_date,
-        "total_expense": total,
-        "transaction_count": len(transactions),
-        "transactions": transactions,
-    }
-
-
-def _build_line_sheet_row(transaction: Any, category: str | None) -> list[Any]:
-    return [
-        getattr(transaction, "date", None) or "",
-        getattr(transaction, "time", None) or "",
-        _number_value(getattr(transaction, "amount", None)),
-        getattr(transaction, "merchant", None) or "",
-        category or "",
-        "line",
-        datetime.now().isoformat(timespec="seconds"),
-    ]
-
-
-def _ensure_line_monthly_tab(service: Any, sheet_id: str, tab_name: str) -> None:
-    metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-    tabs = {
-        sheet["properties"]["title"]
-        for sheet in metadata.get("sheets", [])
-        if "properties" in sheet
-    }
-    if tab_name not in tabs:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=sheet_id,
-            body={
-                "requests": [
-                    {
-                        "addSheet": {
-                            "properties": {
-                                "title": tab_name,
-                                "gridProperties": {
-                                    "rowCount": 1000,
-                                    "columnCount": len(LINE_SHEET_COLUMNS),
-                                },
-                            }
-                        }
-                    }
-                ]
-            },
-        ).execute()
-    _ensure_line_header_row(service, sheet_id, tab_name)
-
-
-def _ensure_line_header_row(service: Any, sheet_id: str, tab_name: str) -> None:
-    header_range = f"{_quote_sheet_name(tab_name)}!A1:G1"
-    response = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=sheet_id, range=header_range)
-        .execute()
+        summary = {
+            "date": query_date,
+            "total_expense": 0.0,
+            "transaction_count": 0,
+            "transactions": [],
+        }
+    print(
+        "[INFO] LINE daily summary result",
+        f"sheet_tab={tab_name}",
+        f"result_count={_daily_summary_transaction_count(summary)}",
+        f"total={summary.get('total_expense')}",
+        flush=True,
     )
-    values = response.get("values", [])
-    if values and values[0] == LINE_SHEET_COLUMNS:
-        return
-    service.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range=header_range,
-        valueInputOption="RAW",
-        body={"values": [LINE_SHEET_COLUMNS]},
-    ).execute()
+    return summary
 
 
-def _read_line_sheet_rows(service: Any, sheet_id: str, tab_name: str) -> list[list[Any]]:
-    response = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=sheet_id, range=f"{_quote_sheet_name(tab_name)}!A:G")
-        .execute()
+def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
+    transaction_count = _daily_summary_transaction_count(summary)
+    total_expense = _number_value(summary.get("total_expense"))
+
+    if transaction_count == 0 and total_expense == 0:
+        return "\n".join(
+            [
+                "วันนี้ใช้เงิน:",
+                "",
+                "ไม่มีรายการใช้เงินวันนี้",
+            ]
+        )
+
+    lines = ["วันนี้ใช้เงิน:"]
+    for transaction in summary.get("transactions", []):
+        lines.append(
+            "- "
+            f"{_daily_summary_item_label(transaction)} "
+            f"{_format_thai_baht(transaction.get('amount'))} บาท"
+        )
+    lines.extend(["", f"รวม {_format_thai_baht(summary.get('total_expense'))} บาท"])
+
+    return "\n".join(lines)
+
+
+def _daily_summary_transaction_count(summary: dict[str, Any]) -> int:
+    transactions = summary.get("transactions")
+    if isinstance(transactions, list):
+        return len(transactions)
+    return int(_number_value(summary.get("transaction_count")))
+
+
+def _daily_summary_item_label(transaction: dict[str, Any]) -> str:
+    for key in ("note", "item", "merchant", "category"):
+        label = _clean_daily_summary_label(transaction.get(key))
+        if label and not _is_noisy_daily_summary_label(label):
+            return label
+    return "-"
+
+
+def _clean_daily_summary_label(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+
+    cleaned = str(value).strip()
+    cleaned = re.sub(
+        r"[-−]?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?\s*(?:บาท|baht|thb)\b",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
     )
-    return response.get("values", [])
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -|:：")
+    return cleaned or None
 
 
-def _line_transactions_for_date(rows: list[list[Any]], query_date: str) -> list[dict[str, Any]]:
-    if not rows:
-        return []
-    header = [str(value).strip() for value in rows[0]]
-    transactions: list[dict[str, Any]] = []
-    for row in rows[1:]:
-        record = _line_row_to_record(header, row)
-        if record.get("date") == query_date:
-            transactions.append(record)
-    return transactions
+def _is_noisy_daily_summary_label(value: str) -> bool:
+    match_text = re.sub(r"[\s:：,./\\|\-]+", "", value.lower())
+    noisy_keywords = (
+        "สิทธิไทยช่วยไทยพลัส",
+        "สิทธิแทยช่วยไทยพลัส",
+        "ส่วนลด",
+        "discount",
+        "จำนวนเงินที่ชำระ",
+        "จํานวนเงินที่ชําระ",
+        "ค่าสินค้าบริการ",
+        "ค่าสินค้า/บริการ",
+        "บาท",
+    )
+    return any(
+        re.sub(r"[\s:：,./\\|\-]+", "", keyword.lower()) in match_text
+        for keyword in noisy_keywords
+    )
 
 
-def _line_row_to_record(header: list[str], row: list[Any]) -> dict[str, Any]:
-    values = {
-        name: row[index] if index < len(row) else ""
-        for index, name in enumerate(header)
-    }
-    return {
-        "date": values.get("Date") or "",
-        "time": values.get("Time") or "",
-        "amount": _number_value(values.get("Amount")),
-        "merchant": values.get("Merchant") or "",
-        "category": values.get("Category") or "",
-        "source": values.get("Source") or "",
-        "created_at": values.get("CreatedAt") or "",
-    }
+def is_daily_summary_command(text: str | None) -> bool:
+    return str(text or "").strip().lower() in DAILY_SUMMARY_COMMANDS
 
 
 def _line_spreadsheet_id(required: bool = False) -> str:
@@ -721,6 +623,13 @@ def _spreadsheet_id_prefix(sheet_id: str | None) -> str:
     if not sheet_id:
         return "-"
     return f"{sheet_id[:8]}..."
+
+
+def _ensure_google_sheet_env_alias() -> None:
+    load_dotenv()
+    spreadsheet_id = os.environ.get("SPREADSHEET_ID")
+    if spreadsheet_id and not os.environ.get("GOOGLE_SHEET_ID"):
+        os.environ["GOOGLE_SHEET_ID"] = spreadsheet_id
 
 
 def line_duplicate_key(transaction: Any) -> str | None:
@@ -794,10 +703,19 @@ def _has_parsed_transaction(transaction: Any) -> bool:
     return bool(transaction and getattr(transaction, "amount", None) is not None)
 
 
+def _has_parsed_date(transaction: Any) -> bool:
+    value = getattr(transaction, "date", None)
+    return bool(value and str(value).strip() != "-")
+
+
 def _format_line_value(value: Any) -> str:
     if value is None or value == "":
         return "-"
     return str(value)
+
+
+def _safe_log_text(value: Any) -> str:
+    return str(value).encode("ascii", errors="backslashreplace").decode("ascii")
 
 
 def _format_amount_value(value: Any) -> str:
@@ -816,6 +734,18 @@ def _format_money_value(value: Any) -> str:
         return f"{float(value):.2f} THB"
     except (TypeError, ValueError):
         return f"{value} THB"
+
+
+def _format_thai_baht(value: Any) -> str:
+    if value is None or value == "":
+        return "0"
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if amount.is_integer():
+        return f"{int(amount):,}"
+    return f"{amount:,.2f}"
 
 
 def _number_value(value: Any) -> float:
