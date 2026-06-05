@@ -81,13 +81,6 @@ def append_transaction_to_sheet(
 
     if not sheet_id:
         raise SheetsError("GOOGLE_SHEET_ID is not set.")
-    if not credentials_path:
-        raise SheetsError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
-    if not Path(credentials_path).exists():
-        raise SheetsError(
-            f"Google service account credentials file not found: {credentials_path}"
-        )
-
     service = _build_sheets_service(credentials_path)
     tab_name = monthly_tab_name(transaction.date)
     _ensure_monthly_tab(service, sheet_id, tab_name)
@@ -228,8 +221,9 @@ def detect_note(raw_text: str | None) -> str | None:
     return None
 
 
-def _build_sheets_service(credentials_path: str):
+def _build_sheets_service(credentials_path: str | None = None):
     try:
+        import google.auth
         from google.oauth2.service_account import Credentials
         from googleapiclient.discovery import build
     except ImportError as exc:
@@ -238,7 +232,23 @@ def _build_sheets_service(credentials_path: str):
         ) from exc
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    credentials = Credentials.from_service_account_file(credentials_path, scopes=scopes)
+    try:
+        if credentials_path:
+            if not Path(credentials_path).exists():
+                raise SheetsError(
+                    f"Google service account credentials file not found: {credentials_path}"
+                )
+            credentials = Credentials.from_service_account_file(
+                credentials_path,
+                scopes=scopes,
+            )
+        else:
+            credentials, _ = google.auth.default(scopes=scopes)
+    except SheetsError:
+        raise
+    except Exception as exc:
+        raise SheetsError(f"Google Sheets authentication failed: {exc}") from exc
+
     return build("sheets", "v4", credentials=credentials)
 
 

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
+import sys
+import tempfile
+import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from expense_tracker.models import TransactionResult
 from expense_tracker.sheets import (
+    _build_sheets_service,
+    append_transaction_to_sheet,
     build_sheet_row,
     detect_note,
     detect_payment_method,
@@ -16,6 +22,36 @@ from expense_tracker.sheets import (
 
 
 class SheetsTest(unittest.TestCase):
+    def _google_modules(self, credentials: object, service: object):
+        google = types.ModuleType("google")
+        google_auth = types.ModuleType("google.auth")
+        google_auth.default = Mock(return_value=(credentials, "project-id"))
+        google.auth = google_auth
+
+        google_oauth2 = types.ModuleType("google.oauth2")
+        service_account = types.ModuleType("google.oauth2.service_account")
+        service_account.Credentials = Mock()
+        service_account.Credentials.from_service_account_file = Mock(
+            return_value=credentials
+        )
+        google_oauth2.service_account = service_account
+        google.oauth2 = google_oauth2
+
+        googleapiclient = types.ModuleType("googleapiclient")
+        discovery = types.ModuleType("googleapiclient.discovery")
+        discovery.build = Mock(return_value=service)
+        googleapiclient.discovery = discovery
+
+        modules = {
+            "google": google,
+            "google.auth": google_auth,
+            "google.oauth2": google_oauth2,
+            "google.oauth2.service_account": service_account,
+            "googleapiclient": googleapiclient,
+            "googleapiclient.discovery": discovery,
+        }
+        return modules, google_auth.default, service_account.Credentials, discovery.build
+
     def test_monthly_tab_name_uses_year_and_month(self) -> None:
         self.assertEqual(monthly_tab_name("2026-06-03"), "2026-06")
 
@@ -148,6 +184,76 @@ class SheetsTest(unittest.TestCase):
             existing_transaction_keys(rows),
             {"2026-06-03|14:19|Shop|26.0"},
         )
+
+    def test_build_sheets_service_uses_service_account_file_when_set(self) -> None:
+        credentials = object()
+        service = object()
+        modules, default_mock, credentials_mock, build_mock = self._google_modules(
+            credentials,
+            service,
+        )
+
+        with tempfile.NamedTemporaryFile() as credentials_file:
+            with patch.dict(sys.modules, modules):
+                result = _build_sheets_service(credentials_file.name)
+
+        self.assertIs(result, service)
+        credentials_mock.from_service_account_file.assert_called_once_with(
+            credentials_file.name,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        default_mock.assert_not_called()
+        build_mock.assert_called_once_with("sheets", "v4", credentials=credentials)
+
+    def test_build_sheets_service_uses_default_credentials_without_file(self) -> None:
+        credentials = object()
+        service = object()
+        modules, default_mock, credentials_mock, build_mock = self._google_modules(
+            credentials,
+            service,
+        )
+
+        with patch.dict(sys.modules, modules):
+            result = _build_sheets_service()
+
+        self.assertIs(result, service)
+        default_mock.assert_called_once_with(
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        credentials_mock.from_service_account_file.assert_not_called()
+        build_mock.assert_called_once_with("sheets", "v4", credentials=credentials)
+
+    def test_append_transaction_allows_default_credentials_mode(self) -> None:
+        transaction = TransactionResult(
+            date="2026-06-03",
+            time="14:19",
+            merchant="Shop",
+            amount=26.0,
+            original_amount=None,
+            discount=None,
+            raw_text=None,
+        )
+        service = Mock()
+        spreadsheets = service.spreadsheets.return_value
+        append_call = spreadsheets.values.return_value.append.return_value
+        append_call.execute.return_value = {}
+
+        with (
+            patch.dict(os.environ, {"GOOGLE_SHEET_ID": "sheet-id"}, clear=True),
+            patch("expense_tracker.sheets.load_dotenv"),
+            patch(
+                "expense_tracker.sheets._build_sheets_service",
+                return_value=service,
+            ) as build_mock,
+            patch("expense_tracker.sheets._ensure_monthly_tab"),
+            patch("expense_tracker.sheets._read_monthly_rows", return_value=[]),
+        ):
+            result = append_transaction_to_sheet(transaction, "slip.jpg")
+
+        self.assertTrue(result["saved"])
+        self.assertFalse(result["duplicate"])
+        self.assertEqual(result["sheet_tab"], "2026-06")
+        build_mock.assert_called_once_with(None)
 
 
 if __name__ == "__main__":

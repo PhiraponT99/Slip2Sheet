@@ -154,8 +154,6 @@ def _build_service_from_env():
 
     if not sheet_id:
         raise SheetsError("GOOGLE_SHEET_ID is not set.")
-    if not credentials_path:
-        raise SheetsError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
 
     return _build_sheets_service(credentials_path), sheet_id
 

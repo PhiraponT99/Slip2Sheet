@@ -37,8 +37,6 @@ def update_summary_sheet() -> dict[str, Any]:
 
     if not sheet_id:
         raise SheetsError("GOOGLE_SHEET_ID is not set.")
-    if not credentials_path:
-        raise SheetsError("GOOGLE_APPLICATION_CREDENTIALS is not set.")
 
     service = _build_sheets_service(credentials_path)
     metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()

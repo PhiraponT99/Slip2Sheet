@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import unittest
 from unittest.mock import Mock, patch
 
+import line_webhook
 from line_webhook import LineWebhookHandler
 
 
@@ -67,6 +70,21 @@ class LineWebhookResponseTest(unittest.TestCase):
         print_mock.assert_called_once_with(
             "[WARN] Client disconnected before response was fully sent."
         )
+
+
+class LineWebhookConfigTest(unittest.TestCase):
+    def test_port_uses_environment_with_local_default(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            reloaded = importlib.reload(line_webhook)
+            self.assertEqual(reloaded.HOST, "0.0.0.0")
+            self.assertEqual(reloaded.PORT, 8000)
+
+        with patch.dict(os.environ, {"PORT": "8080"}, clear=True):
+            reloaded = importlib.reload(line_webhook)
+            self.assertEqual(reloaded.HOST, "0.0.0.0")
+            self.assertEqual(reloaded.PORT, 8080)
+
+        importlib.reload(line_webhook)
 
 
 if __name__ == "__main__":

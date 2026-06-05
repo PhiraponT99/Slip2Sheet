@@ -25,7 +25,7 @@ from expense_tracker.line_bot import LineBotError, get_line_config, handle_line_
 
 
 HOST = "0.0.0.0"
-PORT = 8000
+PORT = int(os.environ.get("PORT", "8000"))
 
 
 load_dotenv()
