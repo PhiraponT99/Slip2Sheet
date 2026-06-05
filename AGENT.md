@@ -34,6 +34,9 @@ Slip image
 -> LINE image message receiver
 -> LINE image download storage
 -> LINE OCR text extraction
+-> LINE OCR transaction parsing
+-> LINE duplicate slip detection
+-> LINE daily summary command
 ```
 
 ## Current Capabilities
@@ -70,6 +73,13 @@ Slip image
 - V1.24 LINE Image Download
 - V1.25 LINE OCR Integration
 - V1.25.1 Graceful Webhook Client Disconnect Handling
+- V1.26 LINE OCR Transaction Parser
+- V1.26.1 Parser Accuracy Investigation
+- V1.26.2 Amount Ranking Fix
+- V1.26.3 Pretty LINE Transaction Reply
+- V1.26.4 Better Merchant Detection
+- V1.26.6 Duplicate LINE Slip Detection
+- V1.27 LINE Daily Summary
 
 ## Core Modules
 
@@ -116,6 +126,12 @@ Slip image
 - LINE image downloads must save under `incoming/line/` unless a task explicitly defines a migration.
 - LINE OCR logs must not print OCR content; log only identifiers, saved file paths, and success/failure status.
 - LINE webhook response writes should handle expected client disconnect errors without printing tracebacks.
+- LINE OCR transaction parsing must reuse `expense_tracker.parser`; do not create a separate LINE parser.
+- Parser investigation logging may print OCR text only for temporary accuracy debugging tasks.
+- LINE transaction replies should keep user-facing formatting clear, with two-decimal THB amounts and `-` for missing fields.
+- Merchant detection should prefer labeled payee/merchant lines and ignore success headers before falling back to generic Thai merchant detection.
+- LINE duplicate detection stores local keys in `processed/line_duplicates.json` using `date|time|amount|merchant`.
+- LINE daily summary commands must reuse existing report, reflection, and budget calculations.
 - Keep changes small and incremental.
 - Preserve backward compatibility where possible.
 

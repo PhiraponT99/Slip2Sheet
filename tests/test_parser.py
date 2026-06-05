@@ -45,6 +45,67 @@ class ParserTest(unittest.TestCase):
         self.assertIsNone(result["original_amount"])
         self.assertIsNone(result["discount"])
 
+    def test_amount_ranking_prefers_payment_amount_over_masked_account(self) -> None:
+        raw_text = "\n".join(
+            [
+                "2026-06-03 10:25",
+                "XXX-XXX073-8",
+                "\u0e08\u0e4d\u0e32\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 58.00",
+            ]
+        )
+
+        result = extract_transaction(raw_text).to_dict()
+
+        self.assertEqual(result["amount"], 58.0)
+
+    def test_scb_bill_payment_multiline_merchant_after_to_label(self) -> None:
+        raw_text = "\n".join(
+            [
+                "@ \u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+                "04/06/2026 12:26",
+                "\u0e44\u0e1b\u0e22\u0e31\u0e07 | CP AXTRA PUBLIC COMPANY",
+                "LIMITED (HEAD",
+                "XXX-XXX073-8",
+                "\u0e08\u0e4d\u0e32\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 58.00",
+            ]
+        )
+
+        with patch("expense_tracker.parser.normalize_merchant", side_effect=lambda merchant: merchant):
+            result = extract_transaction(raw_text).to_dict()
+
+        self.assertEqual(result["merchant"], "CP AXTRA PUBLIC COMPANY LIMITED (HEAD")
+        self.assertEqual(result["amount"], 58.0)
+
+    def test_success_header_is_ignored_as_merchant(self) -> None:
+        raw_text = "\n".join(
+            [
+                "@ \u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+                "04/06/2026 12:26",
+                "\u0e44\u0e1b\u0e22\u0e31\u0e07 | CP AXTRA PUBLIC COMPANY",
+                "\u0e08\u0e4d\u0e32\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 58.00",
+            ]
+        )
+
+        with patch("expense_tracker.parser.normalize_merchant", side_effect=lambda merchant: merchant):
+            result = extract_transaction(raw_text).to_dict()
+
+        self.assertNotEqual(result["merchant"], "@ \u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08")
+        self.assertEqual(result["merchant"], "CP AXTRA PUBLIC COMPANY")
+
+    def test_fallback_merchant_still_works(self) -> None:
+        raw_text = "\n".join(
+            [
+                "2026-06-03 10:25",
+                "\u0e01\u0e30\u0e40\u0e1e\u0e23\u0e32\u0e2b\u0e2d\u0e21",
+                "\u0e2d\u0e32\u0e2b\u0e32\u0e23 \u0e02\u0e2d\u0e07\u0e2b\u0e27\u0e32\u0e19 \u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e14\u0e37\u0e48\u0e21",
+                "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 65.00",
+            ]
+        )
+
+        result = extract_transaction(raw_text).to_dict()
+
+        self.assertEqual(result["merchant"], "\u0e01\u0e30\u0e40\u0e1e\u0e23\u0e32\u0e2b\u0e2d\u0e21")
+
     def test_scb_transfer_prefers_merchant_after_to_label(self) -> None:
         raw_text = "\n".join(
             [

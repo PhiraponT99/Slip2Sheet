@@ -34,10 +34,17 @@
 - V1.24 LINE Image Download
 - V1.25 LINE OCR Integration
 - V1.25.1 Graceful Webhook Client Disconnect Handling
+- V1.26 LINE OCR Transaction Parser
+- V1.26.1 Parser Accuracy Investigation
+- V1.26.2 Amount Ranking Fix
+- V1.26.3 Pretty LINE Transaction Reply
+- V1.26.4 Better Merchant Detection
+- V1.26.6 Duplicate LINE Slip Detection
+- V1.27 LINE Daily Summary
 
 ## Proposed Milestones
 
-## V1.26 Better Parser Test Dataset
+## V1.28 Better Parser Test Dataset
 
 ### Goal
 
@@ -61,7 +68,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.27 Advanced Monthly Financial Insights
+## V1.29 Advanced Monthly Financial Insights
 
 ### Goal
 

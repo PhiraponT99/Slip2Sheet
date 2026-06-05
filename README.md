@@ -30,7 +30,8 @@ Extract transaction details from one payment slip image, print JSON, and optiona
 - Combine daily, weekly, and monthly reflections into one report.
 - Render the combined reflection report as Markdown.
 - Export the Markdown reflection report to a `.md` file.
-- Provide a LINE Bot webhook for text replies, image download storage, and OCR text extraction.
+- Provide a LINE Bot webhook for text replies, image download storage, OCR, and transaction summary replies.
+- Request today's spending summary from LINE.
 - No graphical UI, bank APIs, or stored credentials.
 
 ## Project Structure
@@ -683,7 +684,7 @@ The export command creates `reports/` automatically and overwrites `reports/refl
 
 ## LINE Bot Webhook
 
-V1.25 includes a LINE Bot webhook receiver for text replies, image download storage, and OCR text extraction.
+V1.27 includes a LINE Bot webhook receiver for text replies, today's spending summary, image download storage, OCR, and transaction summary replies.
 
 Run:
 
@@ -716,17 +717,109 @@ Behavior:
 - Receives LINE webhook events.
 - Supports text and image message events.
 - Replies `Hello from Slip2Sheet` to any text message.
+- Replies with today's spending summary when text is `สรุปวันนี้` or `summary today`.
 - Downloads image messages from the LINE Content API.
 - Saves image messages as `incoming/line/line_<message_id>.jpg`.
 - Creates `incoming/line/` automatically if missing.
 - Runs the existing Slip2Sheet OCR module on downloaded image messages.
-- Replies with `OCR completed.` and the first 500 characters of detected text when OCR succeeds.
-- Appends `...` when detected text is longer than 500 characters.
+- Parses OCR text with the existing Slip2Sheet parser.
+- Replies with a structured transaction summary when parsing succeeds.
+- Replies `OCR completed, but transaction parsing failed.` when parsing fails.
+- Keeps raw OCR text reply formatting available for debugging helpers, but the default LINE image reply is the transaction summary.
 - Replies `OCR failed.` when OCR fails.
 - Replies `Failed to download image.` when image download fails.
 - Ignores unsupported message types safely.
 
-This receiver does not parse slips, create transactions, write to Google Sheets, or run reflections.
+This receiver does not create transactions, write to Google Sheets, or run reflections.
+
+LINE daily summary commands:
+
+```text
+สรุปวันนี้
+summary today
+```
+
+LINE daily summary reply:
+
+```text
+📊 Daily Summary
+
+Date: 2026-06-05
+
+Transactions: 2
+
+💸 Total Spent: 125.50 THB
+
+💰 Daily Budget: 300.00 THB
+
+🟢 Remaining Budget: 174.50 THB
+
+Top Category: food
+
+Top Merchant: Lotus's
+
+Reflection: You stayed within your daily budget today.
+```
+
+If there is no spending today:
+
+```text
+📊 Daily Summary
+
+No spending recorded today.
+```
+
+Successful parsed transaction reply:
+
+```text
+💸 Transaction Detected
+
+Amount: 50.00 THB
+Date: 2026-06-03
+Time: 14:19
+
+Merchant: Lotus's
+
+Category: food
+```
+
+V1.26.3 formats LINE transaction replies for readability. Amounts use exactly two decimal places and missing fields display `-`.
+
+V1.26.4 improves merchant detection for LINE slip OCR:
+
+- prefers merchant-like lines near `ไปยัง`, `To`, `Payee`, `Merchant`, and `Biller`
+- joins wrapped merchant names such as `CP AXTRA PUBLIC COMPANY` followed by `LIMITED (HEAD`
+- removes leading symbols such as `@`, `|`, and `:`
+- ignores success headers such as `จ่ายบิลสำเร็จ`, `โอนเงินสำเร็จ`, `payment successful`, and `success`
+
+V1.26.6 detects duplicate LINE slip submissions before continuing with the normal success reply. It stores recent parsed transaction keys in:
+
+```text
+processed/line_duplicates.json
+```
+
+LINE duplicate keys use:
+
+```text
+date|time|amount|merchant
+```
+
+Example:
+
+```text
+2026-06-04|12:26|58.00|CP AXTRA PUBLIC COMPANY LIMITED
+```
+
+Duplicate LINE reply:
+
+```text
+Duplicate slip detected.
+
+Amount: 58.00 THB
+Date: 2026-06-04
+Time: 12:26
+Merchant: CP AXTRA PUBLIC COMPANY LIMITED
+```
 
 LINE image logs include only:
 
@@ -734,7 +827,25 @@ LINE image logs include only:
 - `saved_file`
 - `ocr_success`
 
-The webhook must not log OCR content.
+V1.26.1 adds temporary parser accuracy investigation logs for LINE OCR images. These logs include:
+
+- OCR text
+- amount candidates found by the parser
+- candidate scores and ranking reasons
+- final selected amount
+- selected line
+- selected score
+- root cause classification
+- recommended fix
+
+Use this only while investigating parser accuracy issues, because OCR text can contain personal transaction details.
+
+V1.26.2 improves amount ranking so actual payment amount lines are preferred over account numbers and reference-like values:
+
+- strong amount labels such as `จำนวนเงิน`, `จํานวนเงิน`, `ยอดเงิน`, `amount`, and `total` receive a larger score boost
+- masked account lines such as `XXX-XXX073-8` are penalized
+- reference, biller, and merchant ID lines are penalized
+- decimal amounts such as `58.00` are preferred over integer fragments such as `73`, `1`, or `8`
 
 Troubleshooting `401 Unauthorized` from `/webhook`:
 

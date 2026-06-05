@@ -41,6 +41,7 @@ MERCHANT_KEYWORDS = (
     "receiver",
     "recipient",
     "payee",
+    "biller",
     "to ",
     "to:",
     "ร้าน",
@@ -61,6 +62,14 @@ AMOUNT_KEYWORDS = (
     "ยอดเงิน",
     "ยอดชำระ",
     "บาท",
+)
+
+MERCHANT_LABEL_KEYWORDS = (
+    "to",
+    "payee",
+    "merchant",
+    "biller",
+    "\u0e44\u0e1b\u0e22\u0e31\u0e07",
 )
 
 NOISE_MERCHANT_KEYWORDS = (
@@ -92,9 +101,21 @@ REFERENCE_KEYWORDS = (
     "transaction id",
     "transaction no",
     "ref",
+    "biller",
+    "merchant id",
+    "\u0e23\u0e2b\u0e31\u0e2a\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07",
+    "\u0e40\u0e25\u0e02\u0e17\u0e35\u0e48\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07",
     "อ้างอิง",
     "เลขที่",
     "รายการ",
+)
+
+STRONG_AMOUNT_KEYWORDS = (
+    "amount",
+    "total",
+    "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19",
+    "\u0e08\u0e4d\u0e32\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19",
+    "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19",
 )
 
 PAID_AMOUNT_KEYWORDS = (
@@ -170,6 +191,15 @@ BANK_OR_HEADER_KEYWORDS = (
     "biller id",
     "หมายเลขร้านค้า",
     "บันทึกช่วยจำ",
+)
+
+SUCCESS_HEADER_KEYWORDS = (
+    "\u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+    "\u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e4d\u0e32\u0e40\u0e23\u0e47\u0e08",
+    "\u0e42\u0e2d\u0e19\u0e40\u0e07\u0e34\u0e19\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+    "\u0e42\u0e2d\u0e19\u0e40\u0e07\u0e34\u0e19\u0e2a\u0e4d\u0e32\u0e40\u0e23\u0e47\u0e08",
+    "payment successful",
+    "success",
 )
 
 SCB_TRANSFER_KEYWORDS = (
@@ -257,6 +287,10 @@ def _extract_time(text: str) -> str | None:
 
 
 def _extract_merchant(lines: list[str]) -> str | None:
+    labeled_merchant = _extract_labeled_merchant(lines)
+    if labeled_merchant:
+        return labeled_merchant
+
     scb_merchant = _extract_scb_transfer_merchant(lines)
     if scb_merchant:
         return scb_merchant
@@ -275,14 +309,41 @@ def _extract_merchant(lines: list[str]) -> str | None:
 
         inline_value = _value_after_label(line)
         if _looks_like_merchant(inline_value):
-            return inline_value
+            return _clean_merchant_text(inline_value)
 
         if index + 1 < len(lines) and _looks_like_merchant(lines[index + 1]):
-            return lines[index + 1].strip()
+            return _clean_merchant_text(lines[index + 1])
 
     for line in lines:
         if _looks_like_merchant(line) and any(ch >= "\u0e00" and ch <= "\u0e7f" for ch in line):
             return line.strip()
+
+    return None
+
+
+def _extract_labeled_merchant(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        label = _merchant_label_in_line(line)
+        if not label:
+            continue
+
+        merchant_parts = []
+        inline_value = _value_after_merchant_label(line, label)
+        if inline_value:
+            merchant_parts.append(inline_value)
+
+        for candidate in lines[index + 1 :]:
+            if _is_merchant_stop_line(candidate):
+                break
+            if _looks_like_merchant(candidate):
+                merchant_parts.append(candidate)
+                continue
+            if merchant_parts:
+                break
+
+        merchant = _clean_joined_text(merchant_parts)
+        if _looks_like_merchant(merchant):
+            return merchant
 
     return None
 
@@ -313,6 +374,41 @@ def _extract_scb_transfer_merchant(lines: list[str]) -> str | None:
     return None
 
 
+def _merchant_label_in_line(line: str) -> str | None:
+    match_text = _match_text(line)
+    for label in MERCHANT_LABEL_KEYWORDS:
+        if _match_text(label) in match_text:
+            return label
+    return None
+
+
+def _value_after_merchant_label(line: str, label: str) -> str | None:
+    if label == "\u0e44\u0e1b\u0e22\u0e31\u0e07":
+        return _value_after_scb_label(line, label)
+
+    match = re.search(
+        rf"\b{re.escape(label)}\b\s*[|:：]?\s*(.+?)\s*$",
+        line,
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip()
+
+    parts = re.split(r"[|:：]\s*", line, maxsplit=1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    return None
+
+
+def _is_merchant_stop_line(line: str) -> bool:
+    return (
+        _is_scb_stop_line(line)
+        or _looks_like_account_line(line)
+        or _has_keyword(_match_text(line), AMOUNT_KEYWORDS + REFERENCE_KEYWORDS)
+        or _looks_like_date_or_time_number(line, line.strip())
+    )
+
+
 def _looks_like_scb_transfer(lines: list[str]) -> bool:
     match_text = _match_text("\n".join(lines))
     return all(_has_keyword(match_text, (keyword,)) for keyword in SCB_TRANSFER_KEYWORDS)
@@ -331,7 +427,17 @@ def _is_scb_stop_line(line: str) -> bool:
 
 
 def _clean_joined_text(parts: list[str]) -> str | None:
-    cleaned = " ".join(part.strip() for part in parts if part and part.strip())
+    cleaned = " ".join(
+        _clean_merchant_text(part) for part in parts if part and part.strip()
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
+
+
+def _clean_merchant_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = re.sub(r"^[\s@|:：-]+", "", value.strip())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned or None
 
@@ -394,21 +500,12 @@ def _extract_amount(lines: list[str]) -> float | None:
     candidates: list[tuple[int, float]] = []
 
     for line in lines:
-        lower = line.lower()
-        has_amount_keyword = any(keyword in lower for keyword in AMOUNT_KEYWORDS)
-        has_reference_keyword = any(keyword in lower for keyword in REFERENCE_KEYWORDS)
         for match in _number_matches(line, allow_negative=False):
             value = _parse_number(match.group(0))
             if value is None:
                 continue
 
-            score = 3 if has_amount_keyword else 1
-            if has_reference_keyword:
-                score -= 3
-            if value <= 0:
-                score -= 2
-            if _looks_like_date_or_time_number(line, match.group(0)):
-                score -= 2
+            score = _score_amount_candidate(line, match.group(0), value)
             candidates.append((score, value))
 
     usable = [candidate for candidate in candidates if candidate[0] > 0]
@@ -417,6 +514,49 @@ def _extract_amount(lines: list[str]) -> float | None:
 
     usable.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
     return round(usable[0][1], 2)
+
+
+def _score_amount_candidate(line: str, raw_value: str, value: float) -> int:
+    lower = line.lower()
+    score = 3 if any(keyword in lower for keyword in AMOUNT_KEYWORDS) else 1
+
+    if _has_strong_amount_keyword(line):
+        score += 10
+    if _looks_like_reference_line(line):
+        score -= 5
+    if _looks_like_account_line(line):
+        score -= 5
+    if _looks_like_decimal_amount(raw_value):
+        score += 3
+    if value <= 0:
+        score -= 2
+    if _looks_like_date_or_time_number(line, raw_value):
+        score -= 2
+
+    return score
+
+
+def _has_strong_amount_keyword(line: str) -> bool:
+    return _has_keyword(_match_text(line), STRONG_AMOUNT_KEYWORDS)
+
+
+def _looks_like_reference_line(line: str) -> bool:
+    return _has_keyword(_match_text(line), REFERENCE_KEYWORDS)
+
+
+def _looks_like_account_line(line: str) -> bool:
+    lower = line.lower()
+    if "xxx-" in lower or "xxxx" in lower:
+        return True
+    if re.search(r"\b[xX]{2,}-[xX]{2,}\d{2,}-\d\b", line):
+        return True
+    if re.search(r"\b\d{3}-[xX\d]{1,}-[xX\d]{2,}-\d\b", line):
+        return True
+    return False
+
+
+def _looks_like_decimal_amount(raw_value: str) -> bool:
+    return bool(re.search(r"\.\d{1,2}$", raw_value.strip()))
 
 
 def _format_date(year: int, month: int, day: int) -> str | None:
@@ -450,12 +590,15 @@ def _value_after_label(line: str) -> str | None:
 
 
 def _looks_like_merchant(value: str | None) -> bool:
+    value = _clean_merchant_text(value)
     if not value:
         return False
     lower = value.lower()
     if any(keyword in lower for keyword in NOISE_MERCHANT_KEYWORDS):
         return False
     match_text = _match_text(value)
+    if _has_keyword(match_text, SUCCESS_HEADER_KEYWORDS):
+        return False
     if _has_keyword(match_text, BANK_OR_HEADER_KEYWORDS):
         return False
     if _has_keyword(match_text, AMOUNT_KEYWORDS + PAID_AMOUNT_KEYWORDS + ORIGINAL_AMOUNT_KEYWORDS + DISCOUNT_KEYWORDS):
