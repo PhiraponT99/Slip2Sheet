@@ -44,6 +44,7 @@
 - V1.28 Google Cloud Run Readiness
 - V1.29 Cloud Run Deployment Setup
 - V1.30 Cloud Run Production Smoke Test
+- V1.30.1 Cloud Run OCR Runtime Fix
 
 ## Proposed Milestones
 

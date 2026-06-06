@@ -43,3 +43,6 @@
 - V1.30 Cloud Run Production Smoke Test
 - Add final Cloud Run smoke test checklist for health checks, LINE webhook verification, slip image processing, Google Sheet append logs, daily summary, and redelivery skip behavior
 - Add final secret-based Cloud Run deploy template, log inspection command, git tag instructions, and rollback notes
+- V1.30.1 Cloud Run OCR Runtime Fix
+- Resolve Tesseract path from `TESSERACT_CMD`, Windows default path, PATH lookup, or Linux `/usr/bin/tesseract`
+- Install English and Thai Tesseract language packages in the Docker image

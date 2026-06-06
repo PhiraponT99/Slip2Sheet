@@ -40,6 +40,7 @@ Slip image
 -> Cloud Run deployment runtime
 -> Cloud Run deployment setup
 -> Cloud Run production smoke test
+-> Cloud Run OCR runtime support
 ```
 
 ## Current Capabilities
@@ -86,6 +87,7 @@ Slip image
 - V1.28 Google Cloud Run Readiness
 - V1.29 Cloud Run Deployment Setup
 - V1.30 Cloud Run Production Smoke Test
+- V1.30.1 Cloud Run OCR Runtime Fix
 
 ## Core Modules
 

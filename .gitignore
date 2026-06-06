@@ -4,6 +4,7 @@ processed/
 failed/
 exports/
 reports/
+debug/
 
 # Credentials
 credentials/

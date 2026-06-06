@@ -74,13 +74,41 @@ Install Python dependencies:
 pip install -r requirements.txt
 ```
 
+OCR preprocessing uses `opencv-python-headless` to improve Thai slip OCR before Tesseract runs.
+
 Install the native Tesseract OCR engine and Thai language data. On Windows, this project is configured for:
 
 ```text
 C:\Program Files\Tesseract-OCR\tesseract.exe
 ```
 
-The OCR module requests Thai and English text with `tha+eng`.
+You can override the Tesseract executable path with:
+
+```text
+TESSERACT_CMD=/usr/bin/tesseract
+```
+
+If `TESSERACT_CMD` is not set, Slip2Sheet uses the Windows default path when available, then falls back to `tesseract` on `PATH`, then `/usr/bin/tesseract` for Linux containers.
+
+The OCR module preprocesses slip images with grayscale conversion, 2x resize, contrast adjustment, median denoising, and adaptive thresholding. Tesseract requests Thai and English text with:
+
+```text
+lang=tha+eng
+config=--oem 3 --psm 6
+```
+
+OCR engine and debug options:
+
+```text
+OCR_ENGINE=tesseract
+TESSERACT_CMD=/usr/bin/tesseract
+DEBUG_OCR=false
+OCR_DEBUG_DIR=debug/ocr
+```
+
+`OCR_ENGINE=tesseract` is the default. `OCR_ENGINE=easyocr` is optional and requires installing EasyOCR separately. It is intended for dataset comparison if Tesseract remains inaccurate on specific slip templates.
+
+When `DEBUG_OCR=true`, Slip2Sheet writes processed images, raw OCR text, and parser candidate diagnostics to `OCR_DEBUG_DIR`. Do not commit debug OCR output from real personal slips.
 
 ## Google Sheets Setup
 
@@ -930,6 +958,10 @@ LINE_CHANNEL_SECRET
 LINE_CHANNEL_ACCESS_TOKEN
 SPREADSHEET_ID
 GOOGLE_APPLICATION_CREDENTIALS
+TESSERACT_CMD
+OCR_ENGINE
+DEBUG_OCR
+OCR_DEBUG_DIR
 ```
 
 Credential handling:
@@ -939,6 +971,9 @@ Credential handling:
 - For local Docker testing, `docker run --env-file .env ...` is acceptable if `.env` stays local and uncommitted.
 - For Cloud Run production, prefer Google Cloud Secret Manager for `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, and service account material.
 - A Cloud Run compatible Google credentials approach can use a mounted secret file and `GOOGLE_APPLICATION_CREDENTIALS` pointing at that file, or an application-default identity approach after the Sheets client code is adapted for workload identity.
+- `TESSERACT_CMD=/usr/bin/tesseract` can be set explicitly in Cloud Run. The Docker image installs `tesseract-ocr`, `tesseract-ocr-eng`, `tesseract-ocr-tha`, and the runtime library needed by OpenCV preprocessing.
+- Keep `OCR_ENGINE=tesseract` for the production Cloud Run path unless you intentionally build and test an EasyOCR image.
+- Use `DEBUG_OCR=true` only for controlled troubleshooting. Debug files may contain personal transaction text.
 - Never put real LINE tokens, service account keys, or spreadsheet IDs in README examples.
 
 ## Slip2Sheet V1.29 Cloud Run Deployment
@@ -961,9 +996,15 @@ LINE_CHANNEL_SECRET
 LINE_CHANNEL_ACCESS_TOKEN
 SPREADSHEET_ID
 GOOGLE_APPLICATION_CREDENTIALS
+TESSERACT_CMD
+OCR_ENGINE
+DEBUG_OCR
+OCR_DEBUG_DIR
 ```
 
 For Cloud Run, `GOOGLE_APPLICATION_CREDENTIALS` should point to a Cloud Run compatible credentials path, such as a mounted Secret Manager file. Do not copy service account JSON into the Docker image.
+
+For Cloud Run OCR, set `TESSERACT_CMD=/usr/bin/tesseract` or rely on the container PATH. The Dockerfile installs Thai and English Tesseract language data and OpenCV preprocessing dependencies.
 
 Recommended Secret Manager secrets:
 

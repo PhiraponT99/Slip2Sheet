@@ -169,6 +169,34 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(result["merchant"], "CP AXTRA PUBLIC COMPANY LIMITED (HEAD")
         self.assertEqual(result["amount"], 50.0)
 
+    def test_scb_bill_payment_prefers_biller_merchant_and_amount_label(self) -> None:
+        raw_text = "\n".join(
+            [
+                "\u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08",
+                "06 \u0e21\u0e34.\u0e22. 2569 - 14:48",
+                "\u0e08\u0e32\u0e01",
+                "XXX-X-XXXX1-1",
+                "\u0e44\u0e1b\u0e22\u0e31\u0e07",
+                "CP AXTRA PUBLIC COMPANY",
+                "LIMITED (HEAD)",
+                "Biller ID : 010753600037401",
+                "\u0e2b\u0e21\u0e32\u0e22\u0e40\u0e25\u0e02\u0e23\u0e49\u0e32\u0e19\u0e04\u0e49\u0e32 123456789",
+                "\u0e40\u0e25\u0e02\u0e17\u0e35\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07 987654321",
+                "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 50.00",
+            ]
+        )
+
+        with patch("expense_tracker.parser.normalize_merchant", side_effect=lambda merchant: merchant):
+            result = extract_transaction(raw_text).to_dict()
+
+        self.assertEqual(result["date"], "2026-06-06")
+        self.assertEqual(result["time"], "14:48")
+        self.assertEqual(result["amount"], 50.0)
+        self.assertIn("CP AXTRA PUBLIC COMPANY", result["merchant"])
+        self.assertEqual(result["merchant"], "CP AXTRA PUBLIC COMPANY LIMITED (HEAD)")
+        self.assertNotEqual(result["merchant"], "ID : 010753600037401")
+        self.assertNotIn("Biller ID", result["merchant"])
+
     def test_merchant_alias_is_applied_after_extraction(self) -> None:
         raw_text = "\n".join(
             [

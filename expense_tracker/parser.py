@@ -216,11 +216,22 @@ SCB_TRANSFER_KEYWORDS = (
     "จำนวนเงิน",
 )
 
+SCB_BILL_PAYMENT_KEYWORDS = (
+    "จ่ายบิลสำเร็จ",
+    "biller id",
+    "ไปยัง",
+    "จำนวนเงิน",
+)
+
 SCB_STOP_KEYWORDS = (
     "biller id",
+    "id:",
+    "id :",
     "หมายเลขร้านค้า",
     "เลขที่อ้างอิง",
+    "เลขทีอ้างอิง",
     "จำนวนเงิน",
+    "จํานวนเงิน",
     "บันทึกช่วยจำ",
 )
 
@@ -419,6 +430,9 @@ def _extract_scb_transfer_merchant(lines: list[str]) -> str | None:
 
 
 def _merchant_label_in_line(line: str) -> str | None:
+    if _is_scb_stop_line(line) or _looks_like_reference_line(line):
+        return None
+
     match_text = _match_text(line)
     for label in MERCHANT_LABEL_KEYWORDS:
         if _match_text(label) in match_text:
@@ -456,6 +470,15 @@ def _is_merchant_stop_line(line: str) -> bool:
 def _looks_like_scb_transfer(lines: list[str]) -> bool:
     match_text = _match_text("\n".join(lines))
     return all(_has_keyword(match_text, (keyword,)) for keyword in SCB_TRANSFER_KEYWORDS)
+
+
+def _looks_like_scb_bill_payment(lines: list[str]) -> bool:
+    match_text = _match_text("\n".join(lines))
+    return all(_has_keyword(match_text, (keyword,)) for keyword in SCB_BILL_PAYMENT_KEYWORDS)
+
+
+def _looks_like_scb_payment(lines: list[str]) -> bool:
+    return _looks_like_scb_transfer(lines) or _looks_like_scb_bill_payment(lines)
 
 
 def _value_after_scb_label(line: str, label: str) -> str | None:
@@ -523,14 +546,20 @@ def _extract_amount_details(lines: list[str]) -> dict[str, float | None]:
 
 
 def _extract_scb_transfer_amount(lines: list[str]) -> float | None:
-    if not _looks_like_scb_transfer(lines):
+    if not _looks_like_scb_payment(lines):
         return None
 
     for index, line in enumerate(lines):
-        if not _has_keyword(_match_text(line), ("จำนวนเงิน",)):
+        if not _has_keyword(_match_text(line), ("จำนวนเงิน", "จํานวนเงิน")):
             continue
 
         for candidate in lines[index : index + 4]:
+            if candidate != line and (
+                _looks_like_reference_line(candidate)
+                or _looks_like_account_line(candidate)
+                or _is_scb_stop_line(candidate)
+            ):
+                break
             numbers = _numbers_in_line(candidate, allow_negative=False)
             if numbers:
                 return abs(numbers[0])
@@ -570,6 +599,8 @@ def _score_amount_candidate(line: str, raw_value: str, value: float) -> int:
         score -= 5
     if _looks_like_account_line(line):
         score -= 5
+    if _has_keyword(_match_text(line), ("จาก", "id:", "id :")):
+        score -= 5
     if _looks_like_decimal_amount(raw_value):
         score += 3
     if value <= 0:
@@ -585,7 +616,16 @@ def _has_strong_amount_keyword(line: str) -> bool:
 
 
 def _looks_like_reference_line(line: str) -> bool:
-    return _has_keyword(_match_text(line), REFERENCE_KEYWORDS)
+    return _has_keyword(
+        _match_text(line),
+        REFERENCE_KEYWORDS
+        + (
+            "id:",
+            "id :",
+            "หมายเลขร้านค้า",
+            "เลขทีอ้างอิง",
+        ),
+    )
 
 
 def _looks_like_account_line(line: str) -> bool:
@@ -646,6 +686,8 @@ def _looks_like_merchant(value: str | None) -> bool:
     if _has_keyword(match_text, BANK_OR_HEADER_KEYWORDS):
         return False
     if _has_keyword(match_text, AMOUNT_KEYWORDS + PAID_AMOUNT_KEYWORDS + ORIGINAL_AMOUNT_KEYWORDS + DISCOUNT_KEYWORDS):
+        return False
+    if _looks_like_reference_line(value) or re.match(r"^\s*id\s*[:：]", value, re.IGNORECASE):
         return False
     if _looks_like_category_line(value):
         return False
