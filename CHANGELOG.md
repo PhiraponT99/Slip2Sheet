@@ -37,3 +37,9 @@
 - Add `.dockerignore` to keep local env files, credentials, runtime folders, reports, exports, and caches out of Docker builds
 - Add `GET /healthz` returning plain text `ok`
 - Document local run, Docker run, Cloud Run deploy, required environment variables, and production secret handling
+- V1.29 Cloud Run Deployment Setup
+- Document required Google Cloud services, environment variables, Secret Manager secrets, and deployment checklist
+- Add safe `gcloud` examples for project setup, service enablement, secret creation, Cloud Run deployment, secret mounting, and LINE webhook setup
+- V1.30 Cloud Run Production Smoke Test
+- Add final Cloud Run smoke test checklist for health checks, LINE webhook verification, slip image processing, Google Sheet append logs, daily summary, and redelivery skip behavior
+- Add final secret-based Cloud Run deploy template, log inspection command, git tag instructions, and rollback notes

@@ -42,10 +42,12 @@
 - V1.26.6 Duplicate LINE Slip Detection
 - V1.27 LINE Daily Summary
 - V1.28 Google Cloud Run Readiness
+- V1.29 Cloud Run Deployment Setup
+- V1.30 Cloud Run Production Smoke Test
 
 ## Proposed Milestones
 
-## V1.29 Better Parser Test Dataset
+## V1.31 Better Parser Test Dataset
 
 ### Goal
 
@@ -69,7 +71,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.30 Advanced Monthly Financial Insights
+## V1.32 Advanced Monthly Financial Insights
 
 ### Goal
 

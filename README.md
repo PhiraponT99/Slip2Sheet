@@ -941,6 +941,181 @@ Credential handling:
 - A Cloud Run compatible Google credentials approach can use a mounted secret file and `GOOGLE_APPLICATION_CREDENTIALS` pointing at that file, or an application-default identity approach after the Sheets client code is adapted for workload identity.
 - Never put real LINE tokens, service account keys, or spreadsheet IDs in README examples.
 
+## Slip2Sheet V1.29 Cloud Run Deployment
+
+V1.29 documents the manual Google Cloud Run deployment setup for the existing LINE webhook service. It does not change OCR, parser, Google Sheets append, LINE webhook business logic, or daily summary behavior.
+
+Required Google Cloud services:
+
+```text
+Cloud Run
+Cloud Build
+Secret Manager
+Google Sheets API
+```
+
+Required environment variables:
+
+```text
+LINE_CHANNEL_SECRET
+LINE_CHANNEL_ACCESS_TOKEN
+SPREADSHEET_ID
+GOOGLE_APPLICATION_CREDENTIALS
+```
+
+For Cloud Run, `GOOGLE_APPLICATION_CREDENTIALS` should point to a Cloud Run compatible credentials path, such as a mounted Secret Manager file. Do not copy service account JSON into the Docker image.
+
+Recommended Secret Manager secrets:
+
+```text
+line-channel-secret
+line-channel-access-token
+google-service-account-json
+```
+
+Set the Google Cloud project:
+
+```bash
+gcloud config set project <project-id>
+```
+
+Enable required services:
+
+```bash
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable sheets.googleapis.com
+```
+
+Create secrets with placeholder input files. Use local files that are not committed:
+
+```bash
+gcloud secrets create line-channel-secret --data-file=<line-channel-secret-file>
+gcloud secrets create line-channel-access-token --data-file=<line-channel-access-token-file>
+gcloud secrets create google-service-account-json --data-file=<service-account-json-file>
+```
+
+Deploy with Cloud Run source build and Secret Manager environment variables:
+
+```bash
+gcloud run deploy slip2sheet \
+  --source . \
+  --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars SPREADSHEET_ID=<spreadsheet-id>,GOOGLE_APPLICATION_CREDENTIALS=/secrets/google-service-account.json \
+  --set-secrets LINE_CHANNEL_SECRET=line-channel-secret:latest \
+  --set-secrets LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest
+```
+
+Google service account JSON file pattern:
+
+```bash
+gcloud run services update slip2sheet \
+  --region asia-southeast1 \
+  --set-secrets /secrets/google-service-account.json=google-service-account-json:latest \
+  --set-env-vars GOOGLE_APPLICATION_CREDENTIALS=/secrets/google-service-account.json
+```
+
+This pattern stores the JSON in Secret Manager, mounts it as a file, and points `GOOGLE_APPLICATION_CREDENTIALS` at the mounted file path. Keep the target Google Sheet shared with the service account email.
+
+Alternative deploy using only the required spreadsheet env var:
+
+```bash
+gcloud run deploy slip2sheet \
+  --source . \
+  --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars SPREADSHEET_ID=<spreadsheet-id>
+```
+
+After deployment, set the LINE webhook URL to:
+
+```text
+https://<cloud-run-url>/webhook
+```
+
+Deployment checklist:
+
+- Cloud Run service starts.
+- `GET /healthz` returns `ok`.
+- LINE webhook verification passes.
+- Send one slip image.
+- Google Sheet append success appears in logs.
+- Send `สรุปวันนี้`.
+- Daily summary returns data from the same Google Sheet.
+
+Rollback notes:
+
+- Keep previous local run working with `python line_webhook.py`.
+- Do not remove local `.env` support.
+- If Cloud Run deployment fails, switch the LINE webhook URL back to the last working local/ngrok or previous Cloud Run URL.
+- Do not commit `.env`, credential JSON files, or real spreadsheet IDs.
+
+## Slip2Sheet V1.30 Production Smoke Test
+
+Slip2Sheet V1.30 is the Cloud Run runnable LINE webhook version. This smoke test verifies that Slip2Sheet can run on Google Cloud Run while the local computer is off.
+
+Final deployment command template using Secret Manager:
+
+```bash
+gcloud run deploy slip2sheet \
+  --source . \
+  --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars SPREADSHEET_ID=<spreadsheet-id>,GOOGLE_APPLICATION_CREDENTIALS=/secrets/google/key.json \
+  --set-secrets LINE_CHANNEL_SECRET=line-channel-secret:latest \
+  --set-secrets LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest \
+  --set-secrets /secrets/google/key.json=google-service-account-json:latest
+```
+
+Do not put real token values, service account JSON, or spreadsheet IDs in commands that will be committed to documentation.
+
+Cloud Run log inspection:
+
+```bash
+gcloud run services logs read slip2sheet --region asia-southeast1
+```
+
+Production smoke test checklist:
+
+- Deploy the Cloud Run service.
+- Confirm the Cloud Run service starts.
+- Confirm `GET /healthz` returns `ok`.
+- Set the LINE webhook URL to `https://<cloud-run-url>/webhook`.
+- Verify the LINE webhook in the LINE Developers Console.
+- Send one slip image.
+- Confirm Cloud Run logs show OCR success.
+- Confirm Cloud Run logs show parser success.
+- Confirm Cloud Run logs show Google Sheet append attempt.
+- Confirm Cloud Run logs show Google Sheet append success.
+- Send `สรุปวันนี้`.
+- Confirm the daily summary reads from Google Sheet.
+- Confirm LINE redelivery events are skipped and do not append duplicate rows.
+
+Expected production log signals:
+
+```text
+LINE image ocr_success: True
+LINE transaction parsed date=<date> time=<time> amount=<amount> merchant=<merchant> category=<category>
+Google Sheet append attempt spreadsheet_id=<prefix>... sheet_tab=<YYYY-MM> date=<date> amount=<amount>
+Google Sheet append success saved=True sheet_tab=<YYYY-MM>
+```
+
+Git tag after the production smoke test passes:
+
+```bash
+git tag v1.30
+git push origin v1.30
+```
+
+Rollback notes:
+
+- Keep local run working with `python line_webhook.py`.
+- If Cloud Run fails, temporarily switch the LINE webhook URL back to a local tunnel/ngrok endpoint or previous working Cloud Run URL.
+- Do not remove local `.env` support.
+- Do not commit `.env`, credential JSON files, or real spreadsheet IDs.
+
 Add or update a merchant alias:
 
 ```bash
