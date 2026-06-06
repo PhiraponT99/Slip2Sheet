@@ -29,3 +29,11 @@
 - Add LINE text commands `สรุปวันนี้` and `summary today`
 - Reuse existing daily report, budget, and reflection calculations for the LINE summary reply
 - Keep ordinary text replies and LINE image processing unchanged
+
+2026-06-06
+
+- V1.28 Google Cloud Run Readiness
+- Add Dockerfile using Python 3.11 for the LINE webhook runtime
+- Add `.dockerignore` to keep local env files, credentials, runtime folders, reports, exports, and caches out of Docker builds
+- Add `GET /healthz` returning plain text `ok`
+- Document local run, Docker run, Cloud Run deploy, required environment variables, and production secret handling

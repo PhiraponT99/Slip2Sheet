@@ -37,6 +37,7 @@ Slip image
 -> LINE OCR transaction parsing
 -> LINE duplicate slip detection
 -> LINE daily summary command
+-> Cloud Run deployment runtime
 ```
 
 ## Current Capabilities
@@ -80,6 +81,7 @@ Slip image
 - V1.26.4 Better Merchant Detection
 - V1.26.6 Duplicate LINE Slip Detection
 - V1.27 LINE Daily Summary
+- V1.28 Google Cloud Run Readiness
 
 ## Core Modules
 

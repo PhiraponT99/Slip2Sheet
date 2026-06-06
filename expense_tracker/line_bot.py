@@ -548,10 +548,12 @@ def _daily_summary_transaction_count(summary: dict[str, Any]) -> int:
 
 def _daily_summary_item_label(transaction: dict[str, Any]) -> str:
     for key in ("note", "item", "merchant", "category"):
-        label = _clean_daily_summary_label(transaction.get(key))
+        label = _clean_daily_summary_label(
+            transaction.get(key) or transaction.get(key.title())
+        )
         if label and not _is_noisy_daily_summary_label(label):
             return label
-    return "-"
+    return "รายการ"
 
 
 def _clean_daily_summary_label(value: Any) -> str | None:
@@ -564,6 +566,11 @@ def _clean_daily_summary_label(value: Any) -> str | None:
         "",
         cleaned,
         flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"[-−]?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?",
+        "",
+        cleaned,
     )
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -|:：")
     return cleaned or None
@@ -578,6 +585,8 @@ def _is_noisy_daily_summary_label(value: str) -> bool:
         "discount",
         "จำนวนเงินที่ชำระ",
         "จํานวนเงินที่ชําระ",
+        "จำนวนเงิน",
+        "จํานวนเงิน",
         "ค่าสินค้าบริการ",
         "ค่าสินค้า/บริการ",
         "บาท",

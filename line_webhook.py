@@ -91,12 +91,27 @@ class LineWebhookHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send_json(200, {"status": "ok"})
             return
+        if self.path == "/healthz":
+            self._send_text(200, "ok")
+            return
         self._send_json(404, {"error": "Not found"})
 
     def _send_json(self, status_code: int, payload: dict) -> None:
         response = json.dumps(payload).encode("utf-8")
+        self._send_response(status_code, response, "application/json")
+
+    def _send_text(self, status_code: int, text: str) -> None:
+        response = text.encode("utf-8")
+        self._send_response(status_code, response, "text/plain; charset=utf-8")
+
+    def _send_response(
+        self,
+        status_code: int,
+        response: bytes,
+        content_type: str,
+    ) -> None:
         self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(response)))
         self.end_headers()
         try:

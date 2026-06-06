@@ -41,10 +41,11 @@
 - V1.26.4 Better Merchant Detection
 - V1.26.6 Duplicate LINE Slip Detection
 - V1.27 LINE Daily Summary
+- V1.28 Google Cloud Run Readiness
 
 ## Proposed Milestones
 
-## V1.28 Better Parser Test Dataset
+## V1.29 Better Parser Test Dataset
 
 ### Goal
 
@@ -68,7 +69,7 @@ Improve parser confidence across real Thai slip formats.
 - Fixtures do not contain private account numbers, names, or credentials.
 - Regression tests prevent known merchant/amount/date failures from returning.
 
-## V1.29 Advanced Monthly Financial Insights
+## V1.30 Advanced Monthly Financial Insights
 
 ### Goal
 

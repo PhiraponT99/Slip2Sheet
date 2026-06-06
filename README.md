@@ -702,6 +702,7 @@ Health check:
 
 ```text
 GET /health
+GET /healthz
 ```
 
 Configuration:
@@ -709,6 +710,8 @@ Configuration:
 ```text
 LINE_CHANNEL_SECRET=your_line_channel_secret_here
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
+SPREADSHEET_ID=your_google_sheet_id_here
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
 Behavior:
@@ -723,14 +726,16 @@ Behavior:
 - Creates `incoming/line/` automatically if missing.
 - Runs the existing Slip2Sheet OCR module on downloaded image messages.
 - Parses OCR text with the existing Slip2Sheet parser.
-- Replies with a structured transaction summary when parsing succeeds.
+- Appends parsed transactions to the configured Google Sheet before replying `Transaction Saved`.
+- Reads today's LINE summary from the same Google Sheet source.
+- Replies with a structured transaction summary when parsing and Google Sheet append succeed.
 - Replies `OCR completed, but transaction parsing failed.` when parsing fails.
 - Keeps raw OCR text reply formatting available for debugging helpers, but the default LINE image reply is the transaction summary.
 - Replies `OCR failed.` when OCR fails.
 - Replies `Failed to download image.` when image download fails.
 - Ignores unsupported message types safely.
 
-This receiver does not create transactions, write to Google Sheets, or run reflections.
+This receiver does not run reflections or connect to bank APIs.
 
 LINE daily summary commands:
 
@@ -742,37 +747,28 @@ summary today
 LINE daily summary reply:
 
 ```text
-📊 Daily Summary
+วันนี้ใช้เงิน:
+- ขนมเบื้อง 24 บาท
+- มื้อเที่ยง 16 บาท
+- กดเงินสด 100 บาท
+- มื้อเย็น 28 บาท
+- ชา 15 บาท
 
-Date: 2026-06-05
-
-Transactions: 2
-
-💸 Total Spent: 125.50 THB
-
-💰 Daily Budget: 300.00 THB
-
-🟢 Remaining Budget: 174.50 THB
-
-Top Category: food
-
-Top Merchant: Lotus's
-
-Reflection: You stayed within your daily budget today.
+รวม 183 บาท
 ```
 
 If there is no spending today:
 
 ```text
-📊 Daily Summary
+วันนี้ใช้เงิน:
 
-No spending recorded today.
+ไม่มีรายการใช้เงินวันนี้
 ```
 
 Successful parsed transaction reply:
 
 ```text
-💸 Transaction Detected
+💸 Transaction Saved
 
 Amount: 50.00 THB
 Date: 2026-06-03
@@ -863,6 +859,87 @@ If webhook processing succeeds but Windows shows `WinError 10053`, it usually me
 The webhook logs only boolean presence checks for LINE config values. It must never print the actual channel secret, access token, full signature, signature prefix, or raw request body.
 
 The webhook must verify the exact raw request body bytes from LINE. Do not decode, re-encode, strip, parse, or normalize the body before signature verification.
+
+## Slip2Sheet V1.28 Cloud Run
+
+V1.28 prepares the LINE webhook server for Google Cloud Run without changing OCR, parser, Google Sheet append, or daily summary business logic.
+
+Local run:
+
+```bash
+python line_webhook.py
+```
+
+The local server listens on:
+
+```text
+http://0.0.0.0:8000/webhook
+```
+
+Cloud Run sets `PORT` automatically. The server uses:
+
+```python
+port = int(os.environ.get("PORT", "8000"))
+```
+
+Docker build:
+
+```bash
+docker build -t slip2sheet:v1.28 .
+```
+
+Docker run:
+
+```bash
+docker run --env-file .env -p 8000:8000 slip2sheet:v1.28
+```
+
+Cloud Run deploy from source:
+
+```bash
+gcloud run deploy slip2sheet \
+  --source . \
+  --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars SPREADSHEET_ID=<spreadsheet-id>
+```
+
+LINE webhook URL:
+
+```text
+https://<cloud-run-url>/webhook
+```
+
+Health endpoints:
+
+```text
+GET /health
+GET /healthz
+```
+
+`GET /healthz` returns plain text:
+
+```text
+ok
+```
+
+Required environment variables:
+
+```text
+LINE_CHANNEL_SECRET
+LINE_CHANNEL_ACCESS_TOKEN
+SPREADSHEET_ID
+GOOGLE_APPLICATION_CREDENTIALS
+```
+
+Credential handling:
+
+- Do not copy `.env` or service account JSON files into the Docker image.
+- `.dockerignore` excludes `.env`, `credentials/`, runtime folders, reports, exports, and credential JSON files.
+- For local Docker testing, `docker run --env-file .env ...` is acceptable if `.env` stays local and uncommitted.
+- For Cloud Run production, prefer Google Cloud Secret Manager for `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, and service account material.
+- A Cloud Run compatible Google credentials approach can use a mounted secret file and `GOOGLE_APPLICATION_CREDENTIALS` pointing at that file, or an application-default identity approach after the Sheets client code is adapted for workload identity.
+- Never put real LINE tokens, service account keys, or spreadsheet IDs in README examples.
 
 Add or update a merchant alias:
 

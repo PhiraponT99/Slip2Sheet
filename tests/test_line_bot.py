@@ -343,7 +343,7 @@ class LineBotTest(unittest.TestCase):
         reply = build_daily_summary_reply_text(
             {
                 "date": "2026-06-05",
-                "total_expense": 40.0,
+                "total_expense": 75.6,
                 "transactions": [
                     {
                         "note": "สิทธิไทยช่วยไทยพลัส -36 บาท",
@@ -357,14 +357,44 @@ class LineBotTest(unittest.TestCase):
                         "category": "food",
                         "amount": 16.0,
                     },
+                    {
+                        "note": "58.00",
+                        "item": "ส่วนลด",
+                        "merchant": "discount",
+                        "category": "drink",
+                        "amount": 35.6,
+                    },
                 ],
             }
         )
 
         self.assertIn("- ขนมเบื้อง 24 บาท", reply)
         self.assertIn("- มื้อเที่ยง 16 บาท", reply)
+        self.assertIn("- drink 35.60 บาท", reply)
+        self.assertIn("รวม 75.60 บาท", reply)
         self.assertNotIn("สิทธิไทยช่วยไทยพลัส", reply)
         self.assertNotIn("จำนวนเงินที่ชำระ", reply)
+
+    def test_daily_summary_uses_generic_label_when_all_names_rejected(self) -> None:
+        reply = build_daily_summary_reply_text(
+            {
+                "date": "2026-06-05",
+                "total_expense": 58.0,
+                "transactions": [
+                    {
+                        "note": "จำนวนเงิน 58.00",
+                        "item": "ค่าสินค้า/บริการ 58 บาท",
+                        "merchant": "สิทธิไทยช่วยไทยพลัส -24 บาท",
+                        "category": "บาท",
+                        "amount": 58.0,
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("- รายการ 58 บาท", reply)
+        self.assertNotIn("จำนวนเงิน", reply)
+        self.assertNotIn("ค่าสินค้า/บริการ", reply)
 
     def test_duplicate_reply_token_is_skipped_in_same_webhook(self) -> None:
         body = json.dumps(
