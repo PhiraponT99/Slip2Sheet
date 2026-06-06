@@ -80,6 +80,7 @@ def image_body(
     reply_token: str = "reply-token",
     webhook_event_id: str | None = None,
     is_redelivery: bool | None = None,
+    timestamp: int | None = None,
 ) -> bytes:
     event = {
         "type": "message",
@@ -93,6 +94,8 @@ def image_body(
         event["webhookEventId"] = webhook_event_id
     if is_redelivery is not None:
         event["deliveryContext"] = {"isRedelivery": is_redelivery}
+    if timestamp is not None:
+        event["timestamp"] = timestamp
     return json.dumps({"events": [event]}).encode("utf-8")
 
 
@@ -861,6 +864,112 @@ class LineBotTest(unittest.TestCase):
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
         self.assertEqual(replies, [DATE_PARSE_FAILURE_TEXT])
         self.assertEqual(save_calls, [])
+
+    def test_missing_date_with_amount_and_time_uses_event_local_date(self) -> None:
+        body = image_body(timestamp=1780678800000)
+        replies = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        saved_transactions = []
+        transaction = TransactionResult(
+            date="-",
+            time="17:36",
+            merchant="\u0e02\u0e19\u0e21\u0e40\u0e1a\u0e37\u0e49\u0e2d\u0e07",
+            amount=24.0,
+            raw_text="\u0e08\u0e48\u0e32\u0e22\u0e1a\u0e34\u0e25\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\n17:36\n\u0e08\u0e33\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19 24.00",
+        )
+
+        def save_transaction(transaction, source):
+            saved_transactions.append(transaction)
+            return {"saved": True, "duplicate": False, "sheet_tab": "2026-06"}
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(text),
+            image_download_fn=lambda message_id, token: saved_path,
+            ocr_fn=lambda image_path: transaction.raw_text,
+            parse_fn=lambda ocr_text: transaction,
+            save_transaction_fn=save_transaction,
+            duplicate_store_path=None,
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(saved_transactions[0].date, "2026-06-06")
+        self.assertIn("Transaction Saved", replies[0])
+        self.assertIn("Date: 2026-06-06", replies[0])
+
+    def test_valid_parsed_date_is_not_overwritten_by_event_date(self) -> None:
+        body = image_body(timestamp=1780678800000)
+        replies = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        saved_transactions = []
+        transaction = TransactionResult(
+            date="2026-06-05",
+            time="17:36",
+            merchant="\u0e02\u0e19\u0e21\u0e40\u0e1a\u0e37\u0e49\u0e2d\u0e07",
+            amount=24.0,
+            raw_text="",
+        )
+
+        def save_transaction(transaction, source):
+            saved_transactions.append(transaction)
+            return {"saved": True, "duplicate": False, "sheet_tab": "2026-06"}
+
+        handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(text),
+            image_download_fn=lambda message_id, token: saved_path,
+            ocr_fn=lambda image_path: "",
+            parse_fn=lambda ocr_text: transaction,
+            save_transaction_fn=save_transaction,
+            duplicate_store_path=None,
+        )
+
+        self.assertEqual(saved_transactions[0].date, "2026-06-05")
+        self.assertIn("Date: 2026-06-05", replies[0])
+
+    def test_missing_date_fallback_logs_warning(self) -> None:
+        body = image_body(timestamp=1780678800000)
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        transaction = TransactionResult(
+            date=None,
+            time="17:36",
+            merchant="\u0e02\u0e19\u0e21\u0e40\u0e1a\u0e37\u0e49\u0e2d\u0e07",
+            amount=24.0,
+            raw_text="",
+        )
+
+        with patch("builtins.print") as print_mock:
+            handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: None,
+                image_download_fn=lambda message_id, token: saved_path,
+                ocr_fn=lambda image_path: "",
+                parse_fn=lambda ocr_text: transaction,
+                save_transaction_fn=lambda transaction, source: {
+                    "saved": True,
+                    "duplicate": False,
+                    "sheet_tab": "2026-06",
+                },
+                duplicate_store_path=None,
+            )
+
+        logged = "\n".join(
+            " ".join(str(part) for part in call.args)
+            for call in print_mock.call_args_list
+        )
+        self.assertIn("LINE transaction date missing; fallback to event local date.", logged)
+        self.assertIn("original_date=-", logged)
+        self.assertIn("fallback_date=2026-06-06", logged)
+        self.assertIn("event_timestamp=1780678800000", logged)
 
     def test_line_image_flow_returns_transaction_summary(self) -> None:
         body = image_body()

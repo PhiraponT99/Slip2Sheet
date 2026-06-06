@@ -8,9 +8,11 @@ import os
 import re
 import urllib.error
 import urllib.request
-from datetime import date
+from dataclasses import is_dataclass, replace
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from expense_tracker.ocr import run_ocr
 from expense_tracker.parser import extract_transaction
@@ -37,6 +39,7 @@ SAVE_FAILURE_TEXT = "Transaction detected, but save failed."
 DATE_PARSE_FAILURE_TEXT = "Transaction detected, but date could not be parsed."
 DEFAULT_LINE_IMAGE_DIR = Path("incoming") / "line"
 DEFAULT_LINE_DUPLICATES_PATH = Path("processed") / "line_duplicates.json"
+LINE_LOCAL_TIMEZONE = ZoneInfo("Asia/Bangkok")
 PROCESSED_LINE_EVENT_KEYS: set[str] = set()
 
 
@@ -245,6 +248,7 @@ def _build_image_event_reply_messages(
                 transaction = parse_fn(ocr_text)
                 if not _has_parsed_transaction(transaction):
                     raise LineBotError("Transaction parsing failed.")
+                transaction = _apply_event_date_fallback(transaction, event, ocr_text)
                 category = infer_category(transaction.merchant, ocr_text)
                 _log_parsed_transaction(transaction, category)
                 if not _has_parsed_date(transaction):
@@ -714,7 +718,89 @@ def _has_parsed_transaction(transaction: Any) -> bool:
 
 def _has_parsed_date(transaction: Any) -> bool:
     value = getattr(transaction, "date", None)
-    return bool(value and str(value).strip() != "-")
+    return _has_meaningful_date(value)
+
+
+def _has_meaningful_date(value: Any) -> bool:
+    return bool(value and str(value).strip() not in {"", "-"})
+
+
+def _apply_event_date_fallback(
+    transaction: Any,
+    event: dict[str, Any],
+    ocr_text: str | None,
+) -> Any:
+    original_date = getattr(transaction, "date", None)
+    if _has_meaningful_date(original_date):
+        return transaction
+    if getattr(transaction, "amount", None) is None:
+        return transaction
+    if not (
+        _has_meaningful_value(getattr(transaction, "time", None))
+        or _looks_like_successful_payment_ocr(ocr_text)
+    ):
+        return transaction
+
+    fallback_date = _line_event_local_date(event)
+    if not fallback_date:
+        return transaction
+
+    print(
+        "[WARN] LINE transaction date missing; fallback to event local date.",
+        f"original_date={_safe_log_text(_format_line_value(original_date))}",
+        f"fallback_date={fallback_date}",
+        f"event_timestamp={_format_line_value(event.get('timestamp'))}",
+        flush=True,
+    )
+    return _transaction_with_date(transaction, fallback_date)
+
+
+def _transaction_with_date(transaction: Any, fallback_date: str) -> Any:
+    if is_dataclass(transaction):
+        return replace(transaction, date=fallback_date)
+    try:
+        setattr(transaction, "date", fallback_date)
+        return transaction
+    except Exception:
+        return transaction
+
+
+def _line_event_local_date(event: dict[str, Any]) -> str | None:
+    timestamp = event.get("timestamp")
+    if timestamp is None:
+        return None
+    try:
+        timestamp_seconds = int(timestamp) / 1000
+    except (TypeError, ValueError):
+        return None
+    return (
+        datetime.fromtimestamp(timestamp_seconds, tz=timezone.utc)
+        .astimezone(LINE_LOCAL_TIMEZONE)
+        .date()
+        .isoformat()
+    )
+
+
+def _has_meaningful_value(value: Any) -> bool:
+    return bool(value and str(value).strip() not in {"", "-"})
+
+
+def _looks_like_successful_payment_ocr(ocr_text: str | None) -> bool:
+    text = str(ocr_text or "").lower()
+    normalized = re.sub(r"[\s:：,./\\|\-]+", "", text)
+    keywords = (
+        "จ่ายบิลสำเร็จ",
+        "ชำระเงินสำเร็จ",
+        "ชําระเงินสําเร็จ",
+        "โอนเงินสำเร็จ",
+        "โอนเงินสําเร็จ",
+        "payment successful",
+        "success",
+    )
+    return any(
+        re.sub(r"[\s:：,./\\|\-]+", "", keyword.lower()) in normalized
+        for keyword in keywords
+    )
 
 
 def _format_line_value(value: Any) -> str:
