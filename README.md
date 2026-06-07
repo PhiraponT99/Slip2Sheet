@@ -772,6 +772,28 @@ LINE daily summary commands:
 summary today
 ```
 
+LINE balance commands:
+
+```text
+ตั้งยอดเงิน <amount>
+ยอดเงิน <amount>
+เงินคงเหลือ <amount>
+```
+
+Example:
+
+```text
+ตั้งยอดเงิน 9737.90
+```
+
+Reply:
+
+```text
+บันทึกยอดเงินแล้ว: 9,737.90 บาท
+```
+
+Slip2Sheet stores the latest LINE balance in `data/balance.json`. The `data/` directory is runtime state and should not be committed.
+
 LINE daily summary reply:
 
 ```text
@@ -783,6 +805,17 @@ LINE daily summary reply:
 - ชา 15 บาท
 
 รวม 183 บาท
+```
+
+If a balance has been saved, the daily summary includes the remaining balance after today's spending:
+
+```text
+วันนี้ใช้เงิน:
+- ชาบูเสียบไม้ โอะนาเบะ 40 บาท
+- ป้านก 73 บาท
+
+รวม 113 บาท
+ยอดเงินคงเหลือ: 9,624.90 บาท
 ```
 
 If there is no spending today:

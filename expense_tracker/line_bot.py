@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from expense_tracker.balance import read_balance, save_balance
 from expense_tracker.ocr import run_ocr
 from expense_tracker.parser import extract_transaction
 from expense_tracker.parser_diagnostics import log_parser_investigation
@@ -30,6 +31,17 @@ LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply"
 LINE_CONTENT_ENDPOINT = "https://api-data.line.me/v2/bot/message/{message_id}/content"
 DEFAULT_REPLY_TEXT = "Hello from Slip2Sheet"
 DAILY_SUMMARY_COMMANDS = {"\u0e2a\u0e23\u0e38\u0e1b\u0e27\u0e31\u0e19\u0e19\u0e35\u0e49", "summary today"}
+BALANCE_COMMAND_PREFIXES = (
+    "\u0e15\u0e31\u0e49\u0e07\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19",
+    "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19",
+    "\u0e40\u0e07\u0e34\u0e19\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d",
+)
+INVALID_BALANCE_TEXT = (
+    "\u0e23\u0e30\u0e1a\u0e38\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
+    "\u0e44\u0e21\u0e48\u0e16\u0e39\u0e01\u0e15\u0e49\u0e2d\u0e07 "
+    "\u0e40\u0e0a\u0e48\u0e19 "
+    "\u0e15\u0e31\u0e49\u0e07\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19 9737.90"
+)
 IMAGE_REPLY_TEXT = "Image received by Slip2Sheet"
 IMAGE_DOWNLOAD_SUCCESS_TEXT = "Slip image received."
 IMAGE_DOWNLOAD_FAILURE_TEXT = "Failed to download image."
@@ -194,7 +206,19 @@ def _build_text_event_reply_messages(
     daily_summary_fn: Callable[[], dict[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     message_text = event.get("message", {}).get("text", "")
-    if is_daily_summary_command(message_text):
+    balance_command = parse_balance_command(message_text)
+    if balance_command["matched"]:
+        amount = balance_command["amount"]
+        if amount is None:
+            reply_text = INVALID_BALANCE_TEXT
+        else:
+            try:
+                save_balance(amount, source="line")
+                reply_text = build_balance_saved_reply_text(amount)
+            except (OSError, TypeError, ValueError) as exc:
+                print("[ERROR] LINE balance save failed:", str(exc), flush=True)
+                reply_text = INVALID_BALANCE_TEXT
+    elif is_daily_summary_command(message_text):
         if daily_summary_fn is None:
             daily_summary_fn = line_daily_summary
         reply_text = build_daily_summary_reply_text(daily_summary_fn())
@@ -521,15 +545,17 @@ def line_daily_summary() -> dict[str, Any]:
 def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
     transaction_count = _daily_summary_transaction_count(summary)
     total_expense = _number_value(summary.get("total_expense"))
+    current_balance = read_balance()
 
     if transaction_count == 0 and total_expense == 0:
-        return "\n".join(
-            [
-                "วันนี้ใช้เงิน:",
-                "",
-                "ไม่มีรายการใช้เงินวันนี้",
-            ]
-        )
+        lines = [
+            "วันนี้ใช้เงิน:",
+            "",
+            "ไม่มีรายการใช้เงินวันนี้",
+        ]
+        if current_balance is not None:
+            lines.append(_daily_summary_balance_line(current_balance, total_expense))
+        return "\n".join(lines)
 
     lines = ["วันนี้ใช้เงิน:"]
     for transaction in summary.get("transactions", []):
@@ -540,7 +566,19 @@ def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
         )
     lines.extend(["", f"รวม {_format_thai_baht(summary.get('total_expense'))} บาท"])
 
+    if current_balance is not None:
+        lines.append(_daily_summary_balance_line(current_balance, total_expense))
+
     return "\n".join(lines)
+
+
+def _daily_summary_balance_line(current_balance: float, total_expense: float) -> str:
+    remaining_balance = current_balance - total_expense
+    return (
+        "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
+        "\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d: "
+        f"{_format_balance_baht(remaining_balance)} \u0e1a\u0e32\u0e17"
+    )
 
 
 def _daily_summary_transaction_count(summary: dict[str, Any]) -> int:
@@ -603,6 +641,38 @@ def _is_noisy_daily_summary_label(value: str) -> bool:
 
 def is_daily_summary_command(text: str | None) -> bool:
     return str(text or "").strip().lower() in DAILY_SUMMARY_COMMANDS
+
+
+def parse_balance_command(text: str | None) -> dict[str, Any]:
+    normalized = re.sub(r"\s+", " ", str(text or "").strip())
+    for prefix in BALANCE_COMMAND_PREFIXES:
+        if normalized == prefix:
+            return {"matched": True, "amount": None}
+        if normalized.startswith(f"{prefix} "):
+            amount_text = normalized[len(prefix) :].strip(" :\uff1a")
+            if not re.fullmatch(r"\d[\d,]*(?:\.\d+)?", amount_text):
+                return {"matched": True, "amount": None}
+            try:
+                return {
+                    "matched": True,
+                    "amount": float(amount_text.replace(",", "")),
+                }
+            except ValueError:
+                return {"matched": True, "amount": None}
+    return {"matched": False, "amount": None}
+
+
+def is_balance_command(text: str | None) -> bool:
+    return bool(parse_balance_command(text)["matched"])
+
+
+def build_balance_saved_reply_text(amount: float | int | str) -> str:
+    return (
+        "\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01"
+        "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
+        "\u0e41\u0e25\u0e49\u0e27: "
+        f"{_format_balance_baht(amount)} \u0e1a\u0e32\u0e17"
+    )
 
 
 def _line_spreadsheet_id(required: bool = False) -> str:
@@ -836,6 +906,13 @@ def _format_thai_baht(value: Any) -> str:
     if amount.is_integer():
         return f"{int(amount):,}"
     return f"{amount:,.2f}"
+
+
+def _format_balance_baht(value: Any) -> str:
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
 
 
 def _number_value(value: Any) -> float:

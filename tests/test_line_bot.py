@@ -16,11 +16,13 @@ from expense_tracker.line_bot import (
     DATE_PARSE_FAILURE_TEXT,
     DEFAULT_REPLY_TEXT,
     IMAGE_DOWNLOAD_FAILURE_TEXT,
+    INVALID_BALANCE_TEXT,
     LineBotError,
     OCR_FAILURE_TEXT,
     PARSE_FAILURE_TEXT,
     PROCESSED_LINE_EVENT_KEYS,
     SAVE_FAILURE_TEXT,
+    build_balance_saved_reply_text,
     build_daily_summary_reply_text,
     build_duplicate_reply_text,
     build_ocr_reply_text,
@@ -30,13 +32,16 @@ from expense_tracker.line_bot import (
     download_line_image,
     generate_line_signature,
     handle_line_webhook,
+    is_balance_command,
     is_daily_summary_command,
     line_event_key,
+    parse_balance_command,
     save_line_transaction,
     send_line_reply,
     signature_diagnostics,
     verify_line_signature,
 )
+from expense_tracker.balance import read_balance, save_balance
 from expense_tracker.models import TransactionResult
 from line_webhook import has_required_line_config, load_line_config_with_debug
 
@@ -275,6 +280,49 @@ class LineBotTest(unittest.TestCase):
         self.assertIn("วันนี้ใช้เงิน:", replies[0])
         self.assertTrue(is_daily_summary_command(" สรุปวันนี้ "))
 
+    def test_balance_command_saves_amount(self) -> None:
+        body = text_body("ตั้งยอดเงิน 9737.90")
+        replies = []
+
+        with patch("expense_tracker.line_bot.save_balance") as save_mock:
+            result = handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: replies.append(text),
+            )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        save_mock.assert_called_once_with(9737.9, source="line")
+        self.assertEqual(replies, ["บันทึกยอดเงินแล้ว: 9,737.90 บาท"])
+        self.assertTrue(is_balance_command("ยอดเงิน 9737.90"))
+        self.assertEqual(
+            parse_balance_command("เงินคงเหลือ 9,737.90"),
+            {"matched": True, "amount": 9737.9},
+        )
+        self.assertEqual(
+            build_balance_saved_reply_text(9737.9),
+            "บันทึกยอดเงินแล้ว: 9,737.90 บาท",
+        )
+
+    def test_invalid_balance_command_returns_helpful_error(self) -> None:
+        body = text_body("ตั้งยอดเงิน abc")
+        replies = []
+
+        with patch("expense_tracker.line_bot.save_balance") as save_mock:
+            result = handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: replies.append(text),
+            )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        save_mock.assert_not_called()
+        self.assertEqual(replies, [INVALID_BALANCE_TEXT])
+
     def test_daily_summary_no_spending_reply(self) -> None:
         reply = build_daily_summary_reply_text(
             {
@@ -295,6 +343,58 @@ class LineBotTest(unittest.TestCase):
                 ]
             ),
         )
+
+    def test_daily_summary_includes_remaining_balance_when_saved(self) -> None:
+        with patch("expense_tracker.line_bot.read_balance", return_value=9737.9):
+            reply = build_daily_summary_reply_text(
+                {
+                    "date": "2026-06-05",
+                    "total_expense": 113.0,
+                    "transactions": [
+                        {
+                            "merchant": "ชาบูเสียบไม้ โอะนาเบะ",
+                            "amount": 40.0,
+                        },
+                        {
+                            "merchant": "ป้านก",
+                            "amount": 73.0,
+                        },
+                    ],
+                }
+            )
+
+        self.assertEqual(
+            reply,
+            "\n".join(
+                [
+                    "วันนี้ใช้เงิน:",
+                    "- ชาบูเสียบไม้ โอะนาเบะ 40 บาท",
+                    "- ป้านก 73 บาท",
+                    "",
+                    "รวม 113 บาท",
+                    "ยอดเงินคงเหลือ: 9,624.90 บาท",
+                ]
+            ),
+        )
+
+    def test_daily_summary_omits_remaining_balance_when_not_saved(self) -> None:
+        with patch("expense_tracker.line_bot.read_balance", return_value=None):
+            reply = build_daily_summary_reply_text(
+                {
+                    "date": "2026-06-05",
+                    "total_expense": 35.6,
+                    "transactions": [
+                        {
+                            "merchant": "ชา",
+                            "amount": 35.6,
+                        },
+                    ],
+                }
+            )
+
+        self.assertIn("- ชา 35.60 บาท", reply)
+        self.assertIn("รวม 35.60 บาท", reply)
+        self.assertNotIn("ยอดเงินคงเหลือ", reply)
 
     def test_daily_summary_count_uses_filtered_transaction_list(self) -> None:
         reply = build_daily_summary_reply_text(
@@ -398,6 +498,38 @@ class LineBotTest(unittest.TestCase):
         self.assertIn("- รายการ 58 บาท", reply)
         self.assertNotIn("จำนวนเงิน", reply)
         self.assertNotIn("ค่าสินค้า/บริการ", reply)
+
+    def test_balance_is_not_reset_by_image_uploads(self) -> None:
+        body = image_body()
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        transaction = TransactionResult(
+            date="2026-06-05",
+            time="12:26",
+            merchant="Lotus's",
+            amount=58.0,
+            raw_text="",
+        )
+
+        with patch("expense_tracker.line_bot.save_balance") as save_balance_mock:
+            result = handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: None,
+                image_download_fn=lambda message_id, token: saved_path,
+                ocr_fn=lambda image_path: "amount 58",
+                parse_fn=lambda ocr_text: transaction,
+                save_transaction_fn=lambda transaction, source: {
+                    "saved": True,
+                    "duplicate": False,
+                    "sheet_tab": "2026-06",
+                },
+                duplicate_store_path=None,
+            )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        save_balance_mock.assert_not_called()
 
     def test_duplicate_reply_token_is_skipped_in_same_webhook(self) -> None:
         body = json.dumps(
@@ -1433,6 +1565,23 @@ class LineBotTest(unittest.TestCase):
                 config["channel_access_token"],
                 reply_fn=lambda reply_token, text, token: None,
             )
+
+
+class BalanceStorageTest(unittest.TestCase):
+    def test_save_and_read_balance_creates_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "data" / "balance.json"
+
+            payload = save_balance("9,737.90", path=path)
+
+            self.assertTrue(path.exists())
+            self.assertEqual(payload["amount"], 9737.9)
+            self.assertEqual(payload["source"], "line")
+            self.assertEqual(read_balance(path), 9737.9)
+
+    def test_read_balance_missing_file_returns_none(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.assertIsNone(read_balance(Path(temp_dir) / "missing.json"))
 
 
 if __name__ == "__main__":
