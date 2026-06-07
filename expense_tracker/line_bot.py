@@ -595,11 +595,10 @@ def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
 
 
 def _daily_summary_balance_line(current_balance: float, total_expense: float) -> str:
-    remaining_balance = current_balance - total_expense
     return (
         "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
         "\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d: "
-        f"{_format_balance_baht(remaining_balance)} \u0e1a\u0e32\u0e17"
+        f"{_format_balance_baht(current_balance)} \u0e1a\u0e32\u0e17"
     )
 
 

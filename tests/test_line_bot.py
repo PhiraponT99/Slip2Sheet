@@ -382,7 +382,7 @@ class LineBotTest(unittest.TestCase):
             ).line_daily_summary()
 
         self.assertEqual(summary["current_balance"], 9460.9)
-        self.assertIn("ยอดเงินคงเหลือ: 9,347.90 บาท", build_daily_summary_reply_text(summary))
+        self.assertIn("ยอดเงินคงเหลือ: 9,460.90 บาท", build_daily_summary_reply_text(summary))
 
     def test_daily_summary_no_spending_reply(self) -> None:
         reply = build_daily_summary_reply_text(
@@ -433,7 +433,7 @@ class LineBotTest(unittest.TestCase):
                     "- ป้านก 73 บาท",
                     "",
                     "รวม 113 บาท",
-                    "ยอดเงินคงเหลือ: 9,624.90 บาท",
+                    "ยอดเงินคงเหลือ: 9,737.90 บาท",
                 ]
             ),
         )

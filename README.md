@@ -799,6 +799,8 @@ Key | Value | UpdatedAt
 current_balance | 9460.90 | <timestamp>
 ```
 
+`current_balance` means the current available balance or latest remaining balance entered by the user. It is not a pre-spending starting balance.
+
 If Google Sheets is temporarily unavailable, Slip2Sheet can fall back to `data/balance.json`. The `data/` directory is runtime state and should not be committed.
 
 Read the current saved balance:
@@ -832,7 +834,7 @@ LINE daily summary reply:
 รวม 183 บาท
 ```
 
-If a balance has been saved, the daily summary includes the remaining balance after today's spending:
+If a balance has been saved, the daily summary includes that current available balance directly:
 
 ```text
 วันนี้ใช้เงิน:
@@ -840,7 +842,7 @@ If a balance has been saved, the daily summary includes the remaining balance af
 - ป้านก 73 บาท
 
 รวม 113 บาท
-ยอดเงินคงเหลือ: 9,624.90 บาท
+ยอดเงินคงเหลือ: 9,460.90 บาท
 ```
 
 If there is no spending today:
