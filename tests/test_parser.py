@@ -23,6 +23,45 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(result.time, "11:47")
         self.assertEqual(result.amount, 16.0)
 
+    def test_thai_june_short_date_parses_buddhist_year(self) -> None:
+        raw_text = "\n".join(
+            [
+                "7 มิ.ย. 2569 16:52 น.",
+                "ชาบูเสียบไม้ โอะนาเบะ",
+                "จำนวนเงินที่ชำระ 40 บาท",
+            ]
+        )
+
+        result = extract_transaction(raw_text)
+
+        self.assertEqual(result.date, "2026-06-07")
+        self.assertEqual(result.time, "16:52")
+        self.assertEqual(result.amount, 40.0)
+
+    def test_thai_june_ocr_date_variants_parse_buddhist_year(self) -> None:
+        variants = [
+            "07 มิ.ย. 2569 16:52 น.",
+            "7 มิ.ย 2569 16:52",
+            "7 มิย. 2569 16:52",
+            "7 มิย 2569 16:52",
+        ]
+
+        for date_line in variants:
+            with self.subTest(date_line=date_line):
+                result = extract_transaction(
+                    "\n".join(
+                        [
+                            date_line,
+                            "ชาบูเสียบไม้ โอะนาเบะ",
+                            "จำนวนเงินที่ชำระ 40 บาท",
+                        ]
+                    )
+                )
+
+                self.assertEqual(result.date, "2026-06-07")
+                self.assertEqual(result.time, "16:52")
+                self.assertEqual(result.amount, 40.0)
+
     def test_real_thai_slip_amounts_and_merchant(self) -> None:
         raw_text = "\n".join(
             [

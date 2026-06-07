@@ -21,6 +21,9 @@ THAI_MONTHS = {
     "พ.ค.": 5,
     "พฤษภาคม": 5,
     "มิ.ย.": 6,
+    "มิ.ย": 6,
+    "มิย.": 6,
+    "มิย": 6,
     "มิถุนายน": 6,
     "ก.ค.": 7,
     "กรกฎาคม": 7,
@@ -41,6 +44,9 @@ THAI_MONTHS = {
 OCR_THAI_MONTH_ALIASES = {
     "uw.": "มิ.ย.",
     "uw": "มิ.ย.",
+    "มิ.ย": "มิ.ย.",
+    "มิย.": "มิ.ย.",
+    "มิย": "มิ.ย.",
 }
 
 MERCHANT_KEYWORDS = (
@@ -286,7 +292,9 @@ def _extract_date(text: str) -> str | None:
         _log_date_parse(dmy_match.group(0), dmy_match.group(0), parsed_date)
         return parsed_date
 
-    month_names = "|".join(re.escape(month) for month in THAI_MONTHS)
+    month_names = "|".join(
+        re.escape(month) for month in sorted(THAI_MONTHS, key=len, reverse=True)
+    )
     for raw_line in text.splitlines():
         normalized_line = _normalize_date_text(raw_line)
         thai_match = re.search(
@@ -308,9 +316,13 @@ def _extract_date(text: str) -> str | None:
 
 def _normalize_date_text(text: str) -> str:
     normalized = text.translate(THAI_DIGITS)
-    for alias, month_name in OCR_THAI_MONTH_ALIASES.items():
+    for alias, month_name in sorted(
+        OCR_THAI_MONTH_ALIASES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
         normalized = re.sub(
-            rf"(?<!\w){re.escape(alias)}(?!\w)",
+            rf"(?<!\w){re.escape(alias)}(?![\w.])",
             month_name,
             normalized,
             flags=re.IGNORECASE,

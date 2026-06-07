@@ -735,11 +735,6 @@ def _apply_event_date_fallback(
         return transaction
     if getattr(transaction, "amount", None) is None:
         return transaction
-    if not (
-        _has_meaningful_value(getattr(transaction, "time", None))
-        or _looks_like_successful_payment_ocr(ocr_text)
-    ):
-        return transaction
 
     fallback_date = _line_event_local_date(event)
     if not fallback_date:

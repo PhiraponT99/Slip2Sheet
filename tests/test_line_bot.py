@@ -900,6 +900,41 @@ class LineBotTest(unittest.TestCase):
         self.assertIn("Transaction Saved", replies[0])
         self.assertIn("Date: 2026-06-06", replies[0])
 
+    def test_missing_date_with_amount_without_time_uses_event_local_date(self) -> None:
+        body = image_body(timestamp=1780678800000)
+        replies = []
+        saved_path = Path("incoming") / "line" / "line_image-id.jpg"
+        saved_transactions = []
+        transaction = TransactionResult(
+            date=None,
+            time=None,
+            merchant="\u0e0a\u0e32\u0e1a\u0e39\u0e40\u0e2a\u0e35\u0e22\u0e1a\u0e44\u0e21\u0e49 \u0e42\u0e2d\u0e30\u0e19\u0e32\u0e40\u0e1a\u0e30",
+            amount=40.0,
+            raw_text="\u0e08\u0e33\u0e19\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19\u0e17\u0e35\u0e48\u0e0a\u0e33\u0e23\u0e30 40 \u0e1a\u0e32\u0e17",
+        )
+
+        def save_transaction(transaction, source):
+            saved_transactions.append(transaction)
+            return {"saved": True, "duplicate": False, "sheet_tab": "2026-06"}
+
+        result = handle_line_webhook(
+            body,
+            sign(body),
+            SECRET,
+            "access-token",
+            reply_fn=lambda reply_token, text, token: replies.append(text),
+            image_download_fn=lambda message_id, token: saved_path,
+            ocr_fn=lambda image_path: transaction.raw_text,
+            parse_fn=lambda ocr_text: transaction,
+            save_transaction_fn=save_transaction,
+            duplicate_store_path=None,
+        )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(saved_transactions[0].date, "2026-06-06")
+        self.assertIn("Transaction Saved", replies[0])
+        self.assertIn("Date: 2026-06-06", replies[0])
+
     def test_valid_parsed_date_is_not_overwritten_by_event_date(self) -> None:
         body = image_body(timestamp=1780678800000)
         replies = []
