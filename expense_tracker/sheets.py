@@ -25,6 +25,10 @@ SHEET_COLUMNS = [
     "TransactionKey",
 ]
 
+SETTINGS_TAB_NAME = "Settings"
+SETTINGS_COLUMNS = ["Key", "Value", "UpdatedAt"]
+CURRENT_BALANCE_KEY = "current_balance"
+
 FOOD_KEYWORDS = (
     "กะเพรา",
     "ข้าว",
@@ -110,6 +114,66 @@ def append_transaction_to_sheet(
         "duplicate": False,
         "sheet_tab": tab_name,
     }
+
+
+def save_balance_to_sheet(amount: float | int | str) -> dict[str, Any]:
+    load_dotenv()
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID") or os.environ.get("SPREADSHEET_ID")
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    if not sheet_id:
+        raise SheetsError("GOOGLE_SHEET_ID or SPREADSHEET_ID is not set.")
+
+    balance_amount = _parse_sheet_balance_amount(amount)
+    updated_at = datetime.now().isoformat(timespec="seconds")
+    service = _build_sheets_service(credentials_path)
+    _ensure_settings_tab(service, sheet_id)
+    rows = _read_settings_rows(service, sheet_id)
+
+    row_number = _settings_key_row_number(rows, CURRENT_BALANCE_KEY)
+    if row_number is None:
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range=f"{_quote_sheet_name(SETTINGS_TAB_NAME)}!A:C",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [[CURRENT_BALANCE_KEY, balance_amount, updated_at]]},
+        ).execute()
+    else:
+        service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range=f"{_quote_sheet_name(SETTINGS_TAB_NAME)}!B{row_number}:C{row_number}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[balance_amount, updated_at]]},
+        ).execute()
+
+    return {
+        "key": CURRENT_BALANCE_KEY,
+        "amount": balance_amount,
+        "updated_at": updated_at,
+        "sheet_tab": SETTINGS_TAB_NAME,
+    }
+
+
+def read_balance_from_sheet() -> float | None:
+    load_dotenv()
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID") or os.environ.get("SPREADSHEET_ID")
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    if not sheet_id:
+        raise SheetsError("GOOGLE_SHEET_ID or SPREADSHEET_ID is not set.")
+
+    service = _build_sheets_service(credentials_path)
+    _ensure_settings_tab(service, sheet_id)
+    rows = _read_settings_rows(service, sheet_id)
+
+    for row in rows[1:]:
+        if not row or str(row[0]).strip() != CURRENT_BALANCE_KEY:
+            continue
+        if len(row) < 2:
+            return None
+        return _parse_sheet_balance_amount(row[1])
+    return None
 
 
 def monthly_tab_name(transaction_date: str | None) -> str:
@@ -283,6 +347,57 @@ def _ensure_monthly_tab(service, sheet_id: str, tab_name: str) -> None:
     _ensure_header_row(service, sheet_id, tab_name)
 
 
+def _ensure_settings_tab(service, sheet_id: str) -> None:
+    metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+    tabs = {
+        sheet["properties"]["title"]
+        for sheet in metadata.get("sheets", [])
+        if "properties" in sheet
+    }
+
+    if SETTINGS_TAB_NAME not in tabs:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=sheet_id,
+            body={
+                "requests": [
+                    {
+                        "addSheet": {
+                            "properties": {
+                                "title": SETTINGS_TAB_NAME,
+                                "gridProperties": {
+                                    "rowCount": 100,
+                                    "columnCount": len(SETTINGS_COLUMNS),
+                                },
+                            }
+                        }
+                    }
+                ]
+            },
+        ).execute()
+
+    _ensure_settings_header_row(service, sheet_id)
+
+
+def _ensure_settings_header_row(service, sheet_id: str) -> None:
+    header_range = f"{_quote_sheet_name(SETTINGS_TAB_NAME)}!A1:C1"
+    response = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=sheet_id, range=header_range)
+        .execute()
+    )
+    values = response.get("values", [])
+    if values and values[0] == SETTINGS_COLUMNS:
+        return
+
+    service.spreadsheets().values().update(
+        spreadsheetId=sheet_id,
+        range=header_range,
+        valueInputOption="RAW",
+        body={"values": [SETTINGS_COLUMNS]},
+    ).execute()
+
+
 def _ensure_header_row(service, sheet_id: str, tab_name: str) -> None:
     header_range = f"{_quote_sheet_name(tab_name)}!A1:L1"
     response = (
@@ -313,9 +428,40 @@ def _read_monthly_rows(service, sheet_id: str, tab_name: str) -> list[list[Any]]
     return response.get("values", [])
 
 
+def _read_settings_rows(service, sheet_id: str) -> list[list[Any]]:
+    response = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=sheet_id, range=f"{_quote_sheet_name(SETTINGS_TAB_NAME)}!A:C")
+        .execute()
+    )
+    return response.get("values", [])
+
+
+def _settings_key_row_number(rows: list[list[Any]], key: str) -> int | None:
+    for index, row in enumerate(rows[1:], start=2):
+        if row and str(row[0]).strip() == key:
+            return index
+    return None
+
+
 def _sheet_number(value: float | None) -> float | str:
     if value is None:
         return ""
+    return value
+
+
+def _parse_sheet_balance_amount(amount: float | int | str | None) -> float:
+    if amount is None:
+        raise SheetsError("Balance amount is required.")
+    if isinstance(amount, str):
+        amount = amount.replace(",", "").strip()
+    try:
+        value = float(amount)
+    except (TypeError, ValueError) as exc:
+        raise SheetsError(f"Invalid balance amount: {amount}") from exc
+    if value < 0:
+        raise SheetsError("Balance amount cannot be negative.")
     return value
 
 

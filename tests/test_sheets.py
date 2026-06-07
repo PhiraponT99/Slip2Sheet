@@ -17,6 +17,8 @@ from expense_tracker.sheets import (
     existing_transaction_keys,
     infer_category,
     monthly_tab_name,
+    read_balance_from_sheet,
+    save_balance_to_sheet,
     transaction_key,
 )
 
@@ -254,6 +256,96 @@ class SheetsTest(unittest.TestCase):
         self.assertFalse(result["duplicate"])
         self.assertEqual(result["sheet_tab"], "2026-06")
         build_mock.assert_called_once_with(None)
+
+    def test_save_balance_appends_settings_row_when_missing(self) -> None:
+        service = Mock()
+        values = service.spreadsheets.return_value.values.return_value
+
+        with (
+            patch.dict(os.environ, {"GOOGLE_SHEET_ID": "sheet-id"}, clear=True),
+            patch("expense_tracker.sheets.load_dotenv"),
+            patch("expense_tracker.sheets._build_sheets_service", return_value=service),
+            patch("expense_tracker.sheets._ensure_settings_tab") as ensure_mock,
+            patch(
+                "expense_tracker.sheets._read_settings_rows",
+                return_value=[["Key", "Value", "UpdatedAt"]],
+            ),
+        ):
+            result = save_balance_to_sheet("9,460.90")
+
+        self.assertEqual(result["key"], "current_balance")
+        self.assertEqual(result["amount"], 9460.9)
+        self.assertEqual(result["sheet_tab"], "Settings")
+        ensure_mock.assert_called_once_with(service, "sheet-id")
+        values.append.assert_called_once()
+        append_kwargs = values.append.call_args.kwargs
+        self.assertEqual(append_kwargs["range"], "'Settings'!A:C")
+        self.assertEqual(
+            append_kwargs["body"]["values"][0][:2],
+            ["current_balance", 9460.9],
+        )
+
+    def test_save_balance_updates_existing_settings_row(self) -> None:
+        service = Mock()
+        values = service.spreadsheets.return_value.values.return_value
+
+        with (
+            patch.dict(os.environ, {"GOOGLE_SHEET_ID": "sheet-id"}, clear=True),
+            patch("expense_tracker.sheets.load_dotenv"),
+            patch("expense_tracker.sheets._build_sheets_service", return_value=service),
+            patch("expense_tracker.sheets._ensure_settings_tab"),
+            patch(
+                "expense_tracker.sheets._read_settings_rows",
+                return_value=[
+                    ["Key", "Value", "UpdatedAt"],
+                    ["current_balance", "9000.00", "old"],
+                ],
+            ),
+        ):
+            result = save_balance_to_sheet(9460.9)
+
+        self.assertEqual(result["amount"], 9460.9)
+        values.update.assert_called_once()
+        update_kwargs = values.update.call_args.kwargs
+        self.assertEqual(update_kwargs["range"], "'Settings'!B2:C2")
+        self.assertEqual(update_kwargs["body"]["values"][0][0], 9460.9)
+
+    def test_read_balance_from_settings(self) -> None:
+        service = Mock()
+
+        with (
+            patch.dict(os.environ, {"GOOGLE_SHEET_ID": "sheet-id"}, clear=True),
+            patch("expense_tracker.sheets.load_dotenv"),
+            patch("expense_tracker.sheets._build_sheets_service", return_value=service),
+            patch("expense_tracker.sheets._ensure_settings_tab") as ensure_mock,
+            patch(
+                "expense_tracker.sheets._read_settings_rows",
+                return_value=[
+                    ["Key", "Value", "UpdatedAt"],
+                    ["other", "1", "old"],
+                    ["current_balance", "9,460.90", "now"],
+                ],
+            ),
+        ):
+            balance = read_balance_from_sheet()
+
+        self.assertEqual(balance, 9460.9)
+        ensure_mock.assert_called_once_with(service, "sheet-id")
+
+    def test_read_balance_from_settings_returns_none_when_missing(self) -> None:
+        service = Mock()
+
+        with (
+            patch.dict(os.environ, {"GOOGLE_SHEET_ID": "sheet-id"}, clear=True),
+            patch("expense_tracker.sheets.load_dotenv"),
+            patch("expense_tracker.sheets._build_sheets_service", return_value=service),
+            patch("expense_tracker.sheets._ensure_settings_tab"),
+            patch(
+                "expense_tracker.sheets._read_settings_rows",
+                return_value=[["Key", "Value", "UpdatedAt"]],
+            ),
+        ):
+            self.assertIsNone(read_balance_from_sheet())
 
 
 if __name__ == "__main__":

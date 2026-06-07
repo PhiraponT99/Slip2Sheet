@@ -24,6 +24,8 @@ from expense_tracker.sheets import (
     append_transaction_to_sheet,
     infer_category,
     load_dotenv,
+    read_balance_from_sheet,
+    save_balance_to_sheet,
 )
 
 
@@ -207,15 +209,32 @@ def _build_text_event_reply_messages(
 ) -> list[dict[str, Any]]:
     message_text = event.get("message", {}).get("text", "")
     balance_command = parse_balance_command(message_text)
-    if balance_command["matched"]:
+    if is_current_balance_query_command(message_text):
+        current_balance = _read_line_balance()
+        if current_balance is None:
+            reply_text = (
+                "\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48"
+                "\u0e44\u0e14\u0e49\u0e15\u0e31\u0e49\u0e07"
+                "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19 "
+                "\u0e1e\u0e34\u0e21\u0e1e\u0e4c: "
+                "\u0e15\u0e31\u0e49\u0e07\u0e22\u0e2d\u0e14"
+                "\u0e40\u0e07\u0e34\u0e19 9460.90"
+            )
+        else:
+            reply_text = (
+                "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
+                "\u0e1b\u0e31\u0e08\u0e08\u0e38\u0e1a\u0e31\u0e19: "
+                f"{_format_balance_baht(current_balance)} \u0e1a\u0e32\u0e17"
+            )
+    elif balance_command["matched"]:
         amount = balance_command["amount"]
         if amount is None:
             reply_text = INVALID_BALANCE_TEXT
         else:
             try:
-                save_balance(amount, source="line")
+                _save_line_balance(amount)
                 reply_text = build_balance_saved_reply_text(amount)
-            except (OSError, TypeError, ValueError) as exc:
+            except (OSError, TypeError, ValueError, SheetsError) as exc:
                 print("[ERROR] LINE balance save failed:", str(exc), flush=True)
                 reply_text = INVALID_BALANCE_TEXT
     elif is_daily_summary_command(message_text):
@@ -532,6 +551,7 @@ def line_daily_summary() -> dict[str, Any]:
             "transaction_count": 0,
             "transactions": [],
         }
+    summary["current_balance"] = _read_line_balance()
     print(
         "[INFO] LINE daily summary result",
         f"sheet_tab={tab_name}",
@@ -545,7 +565,9 @@ def line_daily_summary() -> dict[str, Any]:
 def build_daily_summary_reply_text(summary: dict[str, Any]) -> str:
     transaction_count = _daily_summary_transaction_count(summary)
     total_expense = _number_value(summary.get("total_expense"))
-    current_balance = read_balance()
+    current_balance = summary.get("current_balance")
+    if current_balance is None:
+        current_balance = read_balance()
 
     if transaction_count == 0 and total_expense == 0:
         lines = [
@@ -643,6 +665,10 @@ def is_daily_summary_command(text: str | None) -> bool:
     return str(text or "").strip().lower() in DAILY_SUMMARY_COMMANDS
 
 
+def is_current_balance_query_command(text: str | None) -> bool:
+    return str(text or "").strip() == "\u0e22\u0e2d\u0e14\u0e40\u0e07\u0e34\u0e19"
+
+
 def parse_balance_command(text: str | None) -> dict[str, Any]:
     normalized = re.sub(r"\s+", " ", str(text or "").strip())
     for prefix in BALANCE_COMMAND_PREFIXES:
@@ -673,6 +699,32 @@ def build_balance_saved_reply_text(amount: float | int | str) -> str:
         "\u0e41\u0e25\u0e49\u0e27: "
         f"{_format_balance_baht(amount)} \u0e1a\u0e32\u0e17"
     )
+
+
+def _save_line_balance(amount: float | int | str) -> dict[str, Any]:
+    try:
+        _ensure_google_sheet_env_alias()
+        return save_balance_to_sheet(amount)
+    except Exception as exc:
+        print(
+            "[WARN] Google Sheet balance save failed; using local fallback.",
+            f"error={exc}",
+            flush=True,
+        )
+        return save_balance(amount, source="line")
+
+
+def _read_line_balance() -> float | None:
+    try:
+        _ensure_google_sheet_env_alias()
+        return read_balance_from_sheet()
+    except Exception as exc:
+        print(
+            "[WARN] Google Sheet balance read failed; using local fallback.",
+            f"error={exc}",
+            flush=True,
+        )
+        return read_balance()
 
 
 def _line_spreadsheet_id(required: bool = False) -> str:

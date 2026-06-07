@@ -284,7 +284,10 @@ class LineBotTest(unittest.TestCase):
         body = text_body("ตั้งยอดเงิน 9737.90")
         replies = []
 
-        with patch("expense_tracker.line_bot.save_balance") as save_mock:
+        with (
+            patch("expense_tracker.line_bot.save_balance_to_sheet") as save_mock,
+            patch("expense_tracker.line_bot.save_balance") as local_save_mock,
+        ):
             result = handle_line_webhook(
                 body,
                 sign(body),
@@ -294,7 +297,8 @@ class LineBotTest(unittest.TestCase):
             )
 
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
-        save_mock.assert_called_once_with(9737.9, source="line")
+        save_mock.assert_called_once_with(9737.9)
+        local_save_mock.assert_not_called()
         self.assertEqual(replies, ["บันทึกยอดเงินแล้ว: 9,737.90 บาท"])
         self.assertTrue(is_balance_command("ยอดเงิน 9737.90"))
         self.assertEqual(
@@ -304,6 +308,41 @@ class LineBotTest(unittest.TestCase):
         self.assertEqual(
             build_balance_saved_reply_text(9737.9),
             "บันทึกยอดเงินแล้ว: 9,737.90 บาท",
+        )
+
+    def test_current_balance_command_reads_settings(self) -> None:
+        body = text_body("ยอดเงิน")
+        replies = []
+
+        with patch("expense_tracker.line_bot._read_line_balance", return_value=9460.9):
+            result = handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: replies.append(text),
+            )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(replies, ["ยอดเงินปัจจุบัน: 9,460.90 บาท"])
+
+    def test_current_balance_command_missing_settings_value(self) -> None:
+        body = text_body("ยอดเงิน")
+        replies = []
+
+        with patch("expense_tracker.line_bot._read_line_balance", return_value=None):
+            result = handle_line_webhook(
+                body,
+                sign(body),
+                SECRET,
+                "access-token",
+                reply_fn=lambda reply_token, text, token: replies.append(text),
+            )
+
+        self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
+        self.assertEqual(
+            replies,
+            ["ยังไม่ได้ตั้งยอดเงิน พิมพ์: ตั้งยอดเงิน 9460.90"],
         )
 
     def test_invalid_balance_command_returns_helpful_error(self) -> None:
@@ -322,6 +361,28 @@ class LineBotTest(unittest.TestCase):
         self.assertEqual(result, {"status": "ok", "events": 1, "replies": 1})
         save_mock.assert_not_called()
         self.assertEqual(replies, [INVALID_BALANCE_TEXT])
+
+    def test_line_daily_summary_adds_balance_from_settings(self) -> None:
+        summary_data = {
+            "date": "2026-06-05",
+            "total_expense": 113.0,
+            "transactions": [
+                {"merchant": "ชาบูเสียบไม้ โอะนาเบะ", "amount": 40.0},
+                {"merchant": "ป้านก", "amount": 73.0},
+            ],
+        }
+
+        with (
+            patch("expense_tracker.line_bot.today_report", return_value=summary_data),
+            patch("expense_tracker.line_bot._read_line_balance", return_value=9460.9),
+        ):
+            summary = __import__(
+                "expense_tracker.line_bot",
+                fromlist=["line_daily_summary"],
+            ).line_daily_summary()
+
+        self.assertEqual(summary["current_balance"], 9460.9)
+        self.assertIn("ยอดเงินคงเหลือ: 9,347.90 บาท", build_daily_summary_reply_text(summary))
 
     def test_daily_summary_no_spending_reply(self) -> None:
         reply = build_daily_summary_reply_text(

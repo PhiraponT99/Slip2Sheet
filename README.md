@@ -792,7 +792,32 @@ Reply:
 บันทึกยอดเงินแล้ว: 9,737.90 บาท
 ```
 
-Slip2Sheet stores the latest LINE balance in `data/balance.json`. The `data/` directory is runtime state and should not be committed.
+Slip2Sheet stores the latest LINE balance in the Google Sheet `Settings` tab:
+
+```text
+Key | Value | UpdatedAt
+current_balance | 9460.90 | <timestamp>
+```
+
+If Google Sheets is temporarily unavailable, Slip2Sheet can fall back to `data/balance.json`. The `data/` directory is runtime state and should not be committed.
+
+Read the current saved balance:
+
+```text
+ยอดเงิน
+```
+
+Reply:
+
+```text
+ยอดเงินปัจจุบัน: 9,460.90 บาท
+```
+
+If no balance has been saved:
+
+```text
+ยังไม่ได้ตั้งยอดเงิน พิมพ์: ตั้งยอดเงิน 9460.90
+```
 
 LINE daily summary reply:
 
